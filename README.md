@@ -9,3 +9,7 @@ Regular notes are stored as plain text in this browser's local storage. Use the 
 This is a local app, with no account, cloud sync, password recovery, or backup service. Clearing browser data deletes notes. Keep important information backed up elsewhere. Vault encryption protects stored contents, not an unlocked browser, compromised device, or text copied to the system clipboard. This implementation has not undergone an independent security audit.
 
 `npm run check` checks JavaScript syntax.
+
+For Vercel, deploy this repository with the included `vercel.json`. It selects the Other framework preset, runs `npm run build`, and serves the three browser assets from `dist/` with the same Content Security Policy as the local server. No server function is needed. `server.js` is only used for local development.
+
+After committing and pushing deployment changes, redeploy the latest commit in Vercel to apply them. Redeploying an older commit will retain its old configuration.

@@ -1,1 +1,1 @@
-{"name":"ticky-track","version":"1.0.0","private":true,"scripts":{"dev":"node --watch server.js","start":"node server.js","check":"node --check app.js && node --check server.js"}}
+{"name":"ticky-track","version":"1.0.0","private":true,"scripts":{"dev":"node --watch server.js","start":"node server.js","build":"node build.js","check":"node --check app.js && node --check server.js && node --check build.js"}}
