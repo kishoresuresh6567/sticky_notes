@@ -80,8 +80,9 @@
       await loadGoogle();
       if(!dialog.open)return;
       window.google.accounts.id.initialize({client_id:session.clientId,nonce:session.nonce,callback:receiveCredential,auto_select:false,ux_mode:'popup'});
-      window.google.accounts.id.renderButton(googleButton,{type:'standard',theme:'outline',size:'large',text:'continue_with',shape:'rectangular',width:Math.min(320,dialog.clientWidth-56)});
-      status('Choose your Google account to continue.');
+      // Medium size keeps the explicit sign-in label instead of a personalized account name.
+      window.google.accounts.id.renderButton(googleButton,{type:'standard',theme:'outline',size:'medium',text:'signin_with',shape:'rectangular',width:Math.min(320,dialog.clientWidth-56)});
+      status('Click Sign in with Google to open your notes.');
     }catch(error){status(error.message,true);retry.hidden=false;signout.hidden=!session?.user;}
   }
   async function receiveCredential(response){
