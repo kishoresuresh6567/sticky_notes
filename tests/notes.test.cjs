@@ -101,3 +101,27 @@ test('Firebase detects concurrent writes and hides provider failures',async()=>{
   const malformed=firebaseStore(firebaseEnv,async()=>response({version:1,data:'broken'}),token);
   await assert.rejects(malformed.load('a'),e=>e.status===503);
 });
+
+test('Firebase configuration identifies invalid settings without exposing their values',async()=>{
+  for(const [env,pattern] of [
+    [{},/FIREBASE_DATABASE_URL is missing/],
+    [{FIREBASE_DATABASE_URL:'private-placeholder'},/must be the HTTPS URL/],
+    [{FIREBASE_DATABASE_URL:'https://example.com'},/root URL/],
+    [firebaseEnv,/FIREBASE_SERVICE_ACCOUNT_JSON is missing/],
+    [{...firebaseEnv,FIREBASE_SERVICE_ACCOUNT_JSON:'123'},/must be a JSON object/],
+    [{...firebaseEnv,FIREBASE_SERVICE_ACCOUNT_JSON:'null'},/must be a JSON object/],
+    [{...firebaseEnv,FIREBASE_SERVICE_ACCOUNT_JSON:'{"private_key":"private-placeholder"}'},/must be a JSON object/],
+    [{...firebaseEnv,FIREBASE_SERVICE_ACCOUNT_JSON:JSON.stringify({project_id:'test',client_email:'test@example.com',private_key:'private-placeholder'})},/invalid private_key/]
+  ]){
+    await assert.rejects(firebaseStore(env).load('a'),error=>error.status===503&&pattern.test(error.message)&&!error.message.includes('private-placeholder'));
+  }
+});
+
+test('Firebase accepts quoted settings and escaped private-key newlines',async t=>{
+  const {GoogleAuth}=require('google-auth-library');
+  const {privateKey}=require('node:crypto').generateKeyPairSync('rsa',{modulusLength:2048,privateKeyEncoding:{type:'pkcs8',format:'pem'},publicKeyEncoding:{type:'spki',format:'pem'}});
+  t.mock.method(GoogleAuth.prototype,'getAccessToken',async()=> 'test-token');
+  const credentials={project_id:'test',client_email:'test@example.com',private_key:privateKey.replace(/\n/g,'\\n')};
+  const store=firebaseStore({FIREBASE_DATABASE_URL:"  'https://test.europe-west1.firebasedatabase.app/'  ",FIREBASE_SERVICE_ACCOUNT_JSON:"'"+JSON.stringify(credentials)+"'"},async()=>response(null));
+  assert.deepEqual(await store.load('a'),{version:0,data:empty()});
+});
