@@ -69,12 +69,12 @@
     });
     return sdkPromise;
   }
-  async function prepare(){
+  async function prepare(keepOpen=false){
     if(busy)return;
     retry.hidden=true;retry.textContent='Try again';googleButton.replaceChildren();status('Loading sign-in…');
     try{
       if(!await refresh()||!dialog.open)return;
-      if(session.user){status('You are signed in.');dialog.close();return;}
+      if(session.user){status('You are signed in.');if(!keepOpen)dialog.close();return;}
       if(!session.configured){status('Google sign-in is not available yet. Please try again later.');return;}
       if(session.origin!==window.location.origin){status(`Open ${session.origin} to sign in.`,true);return;}
       await loadGoogle();
@@ -95,7 +95,7 @@
     }catch(error){status(error.message,true);retry.hidden=false;signout.hidden=!session?.user;}
     finally{busy=false;}
   }
-  button.addEventListener('click',()=>{if(!dialog.open)dialog.showModal();void prepare();});
+  button.addEventListener('click',()=>{if(!dialog.open)dialog.showModal();void prepare(true);});
   retry.addEventListener('click',()=>void prepare());
   document.querySelector('#close-account').addEventListener('click',()=>{if(session?.user&&!document.body.classList.contains('auth-locked'))dialog.close();});
   dialog.addEventListener('cancel',event=>{if(document.body.classList.contains('auth-locked'))event.preventDefault();});
@@ -105,12 +105,13 @@
   dialog.addEventListener('click',event=>{if(!document.body.classList.contains('auth-locked')&&session?.user&&backdropDown&&outside(event))dialog.close();backdropDown=false;});
   dialog.addEventListener('close',()=>{backdropDown=false;});
   signout.addEventListener('click',async()=>{
-    if(busy)return;busy=true;signout.disabled=true;status('Signing out…');
+    if(busy)return;busy=true;++revision;++renderRevision;signout.disabled=true;status('Signing out…');
     try{
       session=await api('session');
       await api('logout',{method:'POST',headers:{'X-CSRF-Token':session.csrf}});
-      window.google?.accounts?.id?.disableAutoSelect();
       session={...session,user:null};await render();status('Signed out. Your notes are saved to your account.');
+      // Google's optional helper must not prevent clearing a confirmed logout.
+      try{window.google?.accounts?.id?.disableAutoSelect?.();}catch{}
       channel?.postMessage('changed');
       document.dispatchEvent(new CustomEvent('accountchange',{detail:{signedIn:false}}));
       googleButton.replaceChildren();retry.textContent='Sign in again';retry.hidden=false;
