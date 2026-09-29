@@ -85,3 +85,25 @@ h1{font-weight:700;letter-spacing:-1.2px}.brand{font-family:"Trebuchet MS","Sego
 .nav-icon{width:22px;height:22px;flex:0 0 22px;display:block}
 
 .card-icon{width:17px;height:17px;display:block;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;flex-shrink:0}.note-actions{flex-wrap:wrap;justify-content:flex-end}.note-bottom{gap:8px}.note-actions .delete-forever{gap:5px}.pin .card-icon{width:19px;height:19px}
+
+.account-button{border:1px solid var(--line);border-radius:7px;padding:9px 14px;min-height:40px;font-size:12px;font-weight:600;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;background:#fff8}
+.account-button:hover{background:#eed5c6}
+#account-dialog{width:420px;background:#fbf7f2;color:#382f2b}
+#account-dialog h2{font-size:25px;line-height:1.25;margin:0 0 12px}
+.account-description{font-size:14px;margin:0 0 22px;color:#79695f}
+#account-details{display:flex;flex-direction:column;gap:6px;margin-bottom:20px;overflow-wrap:anywhere}
+#account-name{font-size:18px}#account-email{font-size:13px}
+#google-signin{min-height:44px;display:flex;justify-content:center}
+#auth-message{font-size:13px;line-height:1.6;min-height:22px;margin:16px 0}
+.account-local-notice{border-top:1px solid var(--line);padding-top:16px;margin:22px 0 0;font-size:12px;line-height:1.7;color:#79695f}
+[data-theme=dark] .account-button{background:#44342a;border-color:#705443;color:#f9ede4}
+[data-theme=dark] .account-button:hover{background:#604333}
+[data-theme=dark] #account-dialog{background:#332923;color:#f9ede4;border-color:#705443}
+[data-theme=dark] :is(.account-description,.account-local-notice){color:#d5beb0}
+[data-theme=dark] #auth-message.error{color:#ffb5a9}
+@media(max-width:700px){.header-right{gap:10px}.account-button{max-width:110px;padding:8px 10px}}
+
+/* Keep the workspace hidden from the first paint until session verification. */
+body.auth-locked > :not(#account-dialog){display:none!important}
+body.auth-locked #account-dialog::backdrop{background:#fbf7f2;backdrop-filter:none}
+body.auth-locked #close-account{display:none}

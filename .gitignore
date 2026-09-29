@@ -1,2 +1,7 @@
 dist/
 .vercel/
+node_modules/
+.npm-cache/
+.env
+.env.*
+!.env.example

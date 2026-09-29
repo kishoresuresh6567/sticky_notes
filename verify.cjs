@@ -1,6 +1,7 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
+const baseUrl = process.env.TEST_BASE_URL || 'http://127.0.0.1:3000';
 const source = fs.readFileSync('app.js', 'utf8');
 const start = source.indexOf('function b64(');
 const end = source.indexOf('function persist(');
@@ -20,7 +21,7 @@ vm.runInThisContext(source.slice(start,end));
   await assert.rejects(()=>crypto.subtle.decrypt({name:'AES-GCM',iv:unb64(first.iv)},wrong,unb64(first.data)));
   const tampered=unb64(first.data);tampered[0]^=1;
   await assert.rejects(()=>crypto.subtle.decrypt({name:'AES-GCM',iv:unb64(first.iv)},key,tampered));
-  for(const route of ['/','/app.js','/style.css']){const response=await fetch('http://127.0.0.1:3000'+route);assert.equal(response.status,200);assert.ok(response.headers.get('content-security-policy'));}
-  assert.equal((await fetch('http://127.0.0.1:3000/missing')).status,404);
+  for(const route of ['/','/app.js','/style.css']){const response=await fetch(baseUrl+route);assert.equal(response.status,200);assert.ok(response.headers.get('content-security-policy'));}
+  assert.equal((await fetch(baseUrl+'/missing')).status,404);
   console.log('PASS: encryption round trip, unique IVs, wrong password rejection, tamper rejection, server assets and 404.');
 })().catch(error=>{console.error(error);process.exitCode=1;});

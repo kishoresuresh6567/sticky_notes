@@ -1,1 +1,19 @@
-{"name":"ticky-track","version":"1.0.0","private":true,"scripts":{"dev":"node --watch server.js","start":"node server.js","build":"node build.js","check":"node --check app.js && node --check server.js && node --check build.js"}}
+{
+  "name": "ticky-track",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "node --watch server.js",
+    "start": "node server.js",
+    "build": "node build.js",
+    "check": "node --check app.js && node --check auth.js && node --check server.js && node --check build.js && node --check lib/auth.js && node --check api/auth.js",
+    "test": "node --test tests/*.test.cjs",
+    "auth:secret": "node scripts/auth-secret.js"
+  },
+  "dependencies": {
+    "google-auth-library": "^11.1.0"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
