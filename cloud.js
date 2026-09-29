@@ -1,6 +1,6 @@
 // Only the server's verified account ID selects a cloud workspace.
 class AccountCloud {
-  constructor(request=fetch){this.request=request;this.epoch=0;this.id=null;this.version=0;this.ready=false;this.pending=Promise.resolve();}
+  constructor(request=(...args)=>globalThis.fetch(...args)){this.request=request;this.epoch=0;this.id=null;this.version=0;this.ready=false;this.pending=Promise.resolve();}
   async json(url,options={}){
     const response=await this.request(url,{credentials:'same-origin',cache:'no-store',...options,signal:AbortSignal.timeout(15000)});
     const data=await response.json();

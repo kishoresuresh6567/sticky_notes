@@ -4,6 +4,21 @@ const {AccountCloud}=require('../cloud');
 const result=data=>({ok:true,json:async()=>data});
 const empty={notes:[],categories:[],vault:null};
 
+test('default request calls browser fetch with the global receiver',async t=>{
+  const calls=[];
+  t.mock.method(globalThis,'fetch',async function(url,options){
+    if(this!==globalThis)throw new TypeError('Illegal invocation');
+    calls.push(url);
+    if(url.includes('auth'))return result({user:{id:'a'},csrf:'csrf'});
+    return result(options.method==='PUT'?{version:1}:{version:0,data:empty});
+  });
+  const cloud=new AccountCloud();
+  assert.deepEqual(await cloud.open('a'),empty);
+  await cloud.save(empty);
+  assert.deepEqual(calls,['/api/notes','/api/auth?action=session','/api/notes']);
+  assert.equal(cloud.version,1);
+});
+
 test('client loads cloud data and serializes saves using the latest version',async()=>{
   const versions=[];
   const cloud=new AccountCloud(async(url,options)=>{
