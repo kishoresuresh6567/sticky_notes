@@ -1,16 +1,20 @@
 # Ticky Track
 
-Run `npm install`, then `npm start` and open http://localhost:3000. Requires Node.js 22+. Google sign-in requires the configuration below; notes still work without it.
+Run `npm install`, then `npm start` and open http://localhost:3000. Requires Node.js 22+. Google sign-in and Firebase require the configuration below before notes can be used.
 
 Color-coded notes, editable text, whole-note strikethrough, bulleted lists, interactive checklists, pinning, search, color filters, sorting, clipboard copying, and restorable trash. Starter notes are examples and can be edited or deleted.
 
-Regular notes are stored as plain text in this browser's local storage. Use the private vault for sensitive information. Its contents are encrypted using Web Crypto AES-256-GCM with a random IV per save and a PBKDF2-SHA-256 key derived with 600,000 iterations and a random salt. The key stays in memory while unlocked. Lock manually or wait five minutes without keyboard/pointer activity. Reloading also locks it.
+Notes, categories, Trash, and the private vault are saved in Firebase under the verified Google account ID. Sign in with the same account on another device to access them. Different accounts have separate workspaces. The browser stores only the appearance preference; it does not cache cloud notes locally.
 
-Google sign-in is optional. Notes remain in this browser's local storage: signing in does not provide cloud sync, account-specific note storage, password recovery, or a backup service. Signing out does not delete or hide local notes. Clearing browser data deletes notes. Keep important information backed up elsewhere. Vault encryption protects stored contents, not an unlocked browser, compromised device, or text copied to the system clipboard. This implementation has not undergone an independent security audit.
+Private vault contents are encrypted in the browser with AES-256-GCM and a PBKDF2-SHA-256 key derived with 600,000 iterations. Firebase receives only the encrypted vault, salt, and IV. Your vault password is required on each device and cannot be recovered. Regular notes are stored as plain text in the database. Signing out clears displayed notes, drafts, and the decrypted vault from application state.
+
+Each device loads notes on sign-in or page reload. Saves are online-only and version-checked: a stale device cannot overwrite another device's newer save. If a conflict occurs, copy any unsaved editor text before reloading. This does not provide live collaborative editing or offline editing.
+
+Old browser-only notes are left untouched in their original localStorage keys. They are not automatically uploaded or assigned to the first person who signs in, because those notes have no known account owner. New accounts start empty.
 
 `npm run check` checks JavaScript syntax. `npm test` checks authentication, Google token verification, session expiration/tampering, CSRF protection, and deployment headers. With the local server running, `node verify.cjs` checks vault encryption and asset routes.
 
-For Vercel, deploy this repository with the included `vercel.json`. It selects the Other framework preset, runs `npm run build`, and serves browser assets from `dist/`. The `/api/auth` endpoint is a Vercel Node function that verifies Google sign-in and issues session cookies. `server.js` serves the same endpoint for local development. Google-compatible Content Security Policy and popup headers are applied in both environments.
+For Vercel, deploy this repository with the included `vercel.json`. It selects the Other framework preset, runs `npm run build`, and serves browser assets from `dist/`. The `/api/notes` endpoint reads and writes the verified account's cloud workspace. The `/api/auth` endpoint is a Vercel Node function that verifies Google sign-in and issues session cookies. `server.js` serves the same endpoint for local development. Google-compatible Content Security Policy and popup headers are applied in both environments.
 
 After committing and pushing deployment changes, redeploy the latest commit in Vercel to apply them. Redeploying an older commit will retain its old configuration.
 
@@ -40,14 +44,37 @@ Only configure a preview deployment for sign-in if it has its own matching `APP_
 
 ### Local testing
 
-Copy `.env.example` to `.env.local`. Set `GOOGLE_CLIENT_ID`, generate/set `AUTH_SESSION_SECRET`, and keep `APP_ORIGIN=http://localhost:3000`. Run `npm start` and use **http://localhost:3000**, not a different port or `127.0.0.1`. The server loads `.env.local`; these environment files are ignored by Git. Restart after changing them.
+Copy `.env.example` to `.env.local`. Set `GOOGLE_CLIENT_ID`, generate/set `AUTH_SESSION_SECRET`, keep `APP_ORIGIN=http://localhost:3000`, and add the Firebase variables below. Run `npm start` and use **http://localhost:3000**, not a different port or `127.0.0.1`. The server loads `.env.local`; these environment files are ignored by Git. Restart after changing them.
 
 ### Session and data behavior
 
 - Google's official server library verifies ID token signatures, audience, issuer and expiration. A signed 10-minute browser challenge adds CSRF and Google nonce validation.
 - After verification, the Google subject ID (`sub`), name and email are put in a signed, HttpOnly session cookie lasting 12 hours. HTTPS cookies are Secure, SameSite=Lax and use the `__Host-` prefix. Google ID tokens are not saved in localStorage.
 - Sign-out clears this browser's cookies and updates other open tabs. Sessions are stateless; there is no server session database or per-session revocation list. Rotating `AUTH_SESSION_SECRET` invalidates every session.
-- Google sign-in does not unlock the private vault or separate local notes by account. This app requests identity only, not Google Drive/Gmail access. A later account-backed sync feature would require database storage and authorization rules.
-- If credentials are missing, the account dialog explains that sign-in is unavailable while local note editing continues.
+- Google sign-in identifies the account and selects its separate cloud workspace. It does not unlock the private vault. This app requests identity only, not Google Drive/Gmail access.
+- Missing sign-in or database configuration keeps the workspace locked and shows an error. No fallback writes to browser storage occur.
 
 References: [Google setup](https://developers.google.com/identity/gsi/web/guides/get-google-api-clientid), [Google server-side token verification](https://developers.google.com/identity/gsi/web/guides/verify-google-id-token).
+
+## Set up Firebase cloud notes
+
+1. Create/select a project in the [Firebase console](https://console.firebase.google.com/). Create a **Realtime Database** in locked mode and copy its database URL.
+2. Publish the rules in [database.rules.json](database.rules.json) in the database's **Rules** tab. They deny direct client access; the server authenticates with a service account and enforces account ownership.
+3. In **Project settings ? Service accounts**, generate a private key for a service account with Realtime Database access. Compact the downloaded JSON onto one line locally.
+4. Set these variables in `.env.local` and in Vercel's Production environment:
+
+| Variable | Value |
+| --- | --- |
+| `FIREBASE_DATABASE_URL` | The console's HTTPS database URL (`*.firebaseio.com` or `*.firebasedatabase.app`) |
+| `FIREBASE_SERVICE_ACCOUNT_JSON` | The complete service account JSON on one line, retaining escaped newlines in `private_key` |
+
+Keep the JSON server-side and out of source control. No Firebase browser API key is required. Keep the Google sign-in and session variables above.
+
+5. Restart locally or redeploy the latest code on Vercel.
+6. Create a note as account A, then sign in as A in another browser and reload: the note should appear. Account B should have a separate workspace.
+
+The API uses Firebase's REST API with OAuth access tokens and ETag conditional writes, so concurrent saves cannot silently overwrite each other. Each workspace is stored at `account_notes/<base64url Google subject>` with a numeric `version` and JSON-string `data` to preserve empty arrays and null vaults. The existing 2 MiB request limit applies.
+
+Using the same Firebase database locally and in production shares notes between environments. Use separate projects for isolation. Existing records in the previous database are not automatically transferred; retain a backup and import them using the same verified Google subject IDs before switching a live deployment.
+
+References: [Firebase REST authentication](https://firebase.google.com/docs/database/rest/auth), [conditional writes](https://firebase.google.com/docs/database/rest/save-data), [database rules](https://firebase.google.com/docs/database/security).

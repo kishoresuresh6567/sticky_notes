@@ -6,12 +6,14 @@ const securityHeaders=require('./lib/security-headers');
 const envFile=path.join(__dirname,'.env.local');
 if(fs.existsSync(envFile))process.loadEnvFile(envFile);
 const auth=require('./api/auth');
-const files=new Map([['/','index.html'],['/index.html','index.html'],['/app.js','app.js'],['/auth.js','auth.js'],['/style.css','style.css']]);
+const notes=require('./api/notes');
+const files=new Map([['/','index.html'],['/index.html','index.html'],['/app.js','app.js'],['/auth.js','auth.js'],['/cloud.js','cloud.js'],['/style.css','style.css']]);
 
 const server=http.createServer(async(req,res)=>{
   for(const [name,value] of Object.entries(securityHeaders))res.setHeader(name,value);
   const pathname=req.url.split('?')[0];
   if(pathname==='/api/auth')return auth(req,res);
+  if(pathname==='/api/notes')return notes(req,res);
   const file=files.get(pathname);
   if(!file){res.writeHead(404);return res.end('Not found');}
   if(!['GET','HEAD'].includes(req.method)){res.writeHead(405,{Allow:'GET, HEAD'});return res.end('Method not allowed');}

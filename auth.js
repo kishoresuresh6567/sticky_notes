@@ -6,7 +6,7 @@
   const retry=document.querySelector('#auth-retry');
   const signout=document.querySelector('#signout-button');
   const account=document.querySelector('#account-details');
-  let session=null,sdkPromise=null,revision=0,busy=false;
+  let session=null,sdkPromise=null,revision=0,renderRevision=0,busy=false;
   const channel=typeof BroadcastChannel==='function'?new BroadcastChannel('ticky-track-auth'):null;
 
   async function api(action,options={}){
@@ -24,8 +24,15 @@
     }finally{clearTimeout(timeout);}
   }
   function status(text,isError=false){message.textContent=text;message.classList.toggle('error',isError);}
-  function render(){
+  async function render(){
+    const current=++renderRevision;
     const user=session?.user;
+    if(!user||!window.accountCloud.ready||window.accountCloud.id!==user.id){
+      document.body.classList.add('auth-locked');
+      if(!dialog.open)dialog.showModal();
+    }
+    await window.activateNotes(user);
+    if(current!==renderRevision)return;
     document.body.classList.toggle('auth-locked',!user);
     document.querySelector('#close-account').hidden=!user;
     if(!user){
@@ -47,7 +54,7 @@
     const current=++revision;
     const data=await api('session');
     if(current!==revision)return false;
-    session=data;render();return true;
+    session=data;await render();return true;
   }
   function loadGoogle(){
     if(window.google?.accounts?.id)return Promise.resolve();
@@ -67,7 +74,7 @@
     retry.hidden=true;retry.textContent='Try again';googleButton.replaceChildren();status('Loading sign-in…');
     try{
       if(!await refresh()||!dialog.open)return;
-      if(session.user){status('You are signed in.');return;}
+      if(session.user){status('You are signed in.');dialog.close();return;}
       if(!session.configured){status('Google sign-in is not available yet. Please try again later.');return;}
       if(session.origin!==window.location.origin){status(`Open ${session.origin} to sign in.`,true);return;}
       await loadGoogle();
@@ -75,35 +82,35 @@
       window.google.accounts.id.initialize({client_id:session.clientId,nonce:session.nonce,callback:receiveCredential,auto_select:false,ux_mode:'popup'});
       window.google.accounts.id.renderButton(googleButton,{type:'standard',theme:'outline',size:'large',text:'continue_with',shape:'rectangular',width:Math.min(320,dialog.clientWidth-56)});
       status('Choose your Google account to continue.');
-    }catch(error){status(error.message,true);retry.hidden=false;}
+    }catch(error){status(error.message,true);retry.hidden=false;signout.hidden=!session?.user;}
   }
   async function receiveCredential(response){
     if(busy)return;
     busy=true;++revision;retry.hidden=true;googleButton.hidden=true;status('Signing you in…');
     try{
       const result=await api('google',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':session.csrf},body:JSON.stringify({credential:response.credential})});
-      session={...session,user:result.user,expiresAt:result.expiresAt};render();status('You are signed in.');dialog.close();
+      session={...session,user:result.user,expiresAt:result.expiresAt};await render();status('You are signed in.');dialog.close();
       channel?.postMessage('changed');
       document.dispatchEvent(new CustomEvent('accountchange',{detail:{signedIn:true}}));
-    }catch(error){status(error.message,true);retry.hidden=false;}
+    }catch(error){status(error.message,true);retry.hidden=false;signout.hidden=!session?.user;}
     finally{busy=false;}
   }
   button.addEventListener('click',()=>{if(!dialog.open)dialog.showModal();void prepare();});
   retry.addEventListener('click',()=>void prepare());
-  document.querySelector('#close-account').addEventListener('click',()=>{if(session?.user)dialog.close();});
-  dialog.addEventListener('cancel',event=>{if(!session?.user)event.preventDefault();});
+  document.querySelector('#close-account').addEventListener('click',()=>{if(session?.user&&!document.body.classList.contains('auth-locked'))dialog.close();});
+  dialog.addEventListener('cancel',event=>{if(document.body.classList.contains('auth-locked'))event.preventDefault();});
   let backdropDown=false;
   function outside(event){const bounds=dialog.getBoundingClientRect();return event.target===dialog&&(event.clientX<bounds.left||event.clientX>bounds.right||event.clientY<bounds.top||event.clientY>bounds.bottom);}
   dialog.addEventListener('pointerdown',event=>{backdropDown=event.button===0&&outside(event);});
-  dialog.addEventListener('click',event=>{if(session?.user&&backdropDown&&outside(event))dialog.close();backdropDown=false;});
+  dialog.addEventListener('click',event=>{if(!document.body.classList.contains('auth-locked')&&session?.user&&backdropDown&&outside(event))dialog.close();backdropDown=false;});
   dialog.addEventListener('close',()=>{backdropDown=false;});
   signout.addEventListener('click',async()=>{
     if(busy)return;busy=true;signout.disabled=true;status('Signing out…');
     try{
-      await refresh();
+      session=await api('session');
       await api('logout',{method:'POST',headers:{'X-CSRF-Token':session.csrf}});
       window.google?.accounts?.id?.disableAutoSelect();
-      session={...session,user:null};render();status('Signed out. Your notes are still saved in this browser.');
+      session={...session,user:null};await render();status('Signed out. Your notes are saved to your account.');
       channel?.postMessage('changed');
       document.dispatchEvent(new CustomEvent('accountchange',{detail:{signedIn:false}}));
       googleButton.replaceChildren();retry.textContent='Sign in again';retry.hidden=false;
@@ -116,11 +123,10 @@
       await refresh();
       if(!session?.user)await prepare();
     }catch(error){
-      session=null;render();status(error.message,true);retry.hidden=false;
+      session=null;await render();status(error.message,true);retry.hidden=false;
     }
   }
   if(channel)channel.onmessage=()=>void checkSession();
   window.addEventListener('focus',()=>{if(!dialog.open)void checkSession();});
-  render();
-  void prepare().then(()=>{if(session?.user)dialog.close();});
+  void prepare();
 })();
