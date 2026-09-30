@@ -17,6 +17,8 @@ async function removeAndConfirm(match){
   if((await self.registration.getNotifications()).some(match))throw new Error('notification-close-pending');
 }
 async function replace(title,options,onlyIfPresent){
+  // Also suppress update requests sent by tabs still running the old client.
+  if(onlyIfPresent)return;
   const existing=(await self.registration.getNotifications()).filter(n=>sameNote(n,options));
   if(onlyIfPresent&&!existing.length)return;
   if(onlyIfPresent&&clearedTags.has(options.tag))return;
@@ -70,15 +72,8 @@ self.addEventListener('notificationclick',event=>{
     if(existing.length){
       const newest=existing.reduce((a,b)=>newer(a,b)>=0?a:b);
       existing.filter(n=>n!==newest).forEach(n=>n.close());
-    }else{
-      // Restore only when the browser consumed the clicked card. Never replace
-      // a newer notification with the old content carried by a click event.
-      await self.registration.showNotification(notification.title,{
-        body:notification.body,tag:notification.tag,data:notification.data,
-        requireInteraction:true,silent:true,renotify:false,
-        actions:[{action:'clear',title:'Clear notification'}]
-      });
     }
+    // Opening a notification must never publish another one, on any device.
     const windows=await self.clients.matchAll({type:'window',includeUncontrolled:true});
     if(windows.length)await windows[0].focus();
     else await self.clients.openWindow('/');
