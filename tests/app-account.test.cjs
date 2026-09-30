@@ -109,3 +109,16 @@ test('moving a note into the vault removes it from notification synchronization'
  assert.deepEqual(synced.at(-1),[]);
  assert.equal(a.run('privateNotes.length'),1);
 });
+
+test('focus or notification events during workspace loading do not clear selected notifications',async()=>{
+ const synced=[];
+ const a=app({selected:new Set(),async setAccount(){},async sync(notes){synced.push(structuredClone(notes));}});
+ let finish;
+ a.cloud.open=async function(id){this.id=id;this.ready=false;const data=await new Promise(resolve=>{finish=resolve;});this.ready=true;return data;};
+ const opening=a.run("activateNotes({id:'a'})");
+ await a.run('syncNotifications()');
+ assert.equal(synced.length,0);
+ finish({notes:[{id:'kept',title:'Keep me',body:'Visible',type:'text',checked:[],color:'yellow',created:1,updated:1}],categories:[],vault:null});
+ await opening;
+ assert.equal(synced.length,1);assert.equal(synced[0][0].id,'kept');
+});

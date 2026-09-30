@@ -13,7 +13,11 @@ document.querySelectorAll('button[data-theme]').forEach(button=>button.addEventL
 const colors = {yellow:'Butter yellow',green:'Sage green',pink:'Soft rose',blue:'Sky blue',purple:'Lavender',cream:'Warm neutral',gold:'Sunshine',orange:'Tangerine',coral:'Coral red',teal:'Deep teal',cobalt:'Cobalt blue',violet:'Royal violet',berry:'Berry',navy:'Midnight blue',charcoal:'Charcoal'};
 const cloud=window.accountCloud;
 const notifications=window.noteNotifications;
-async function syncNotifications(snapshot=notes){try{await notifications?.sync(snapshot);render();}catch{toast('Could not update notifications. Check browser permissions.');}}
+async function syncNotifications(snapshot=notes){
+ // An empty workspace while loading is not an authoritative deletion of notes.
+ if(!accountId||!cloud.ready||cloud.id!==accountId)return;
+ try{await notifications?.sync(snapshot);render();}catch{toast('Could not update notifications. Check browser permissions.');}
+}
 window.navigator?.serviceWorker?.addEventListener('message',event=>{if(event.data?.type==='note-notifications-changed')void syncNotifications();});
 window.addEventListener?.('focus',()=>{if(accountId)void syncNotifications();});
 let accountId=null,accountEpoch=0,cloudError='';
@@ -166,7 +170,7 @@ function card(n){const article=el('article',`note ${n.color}`),head=el('div','no
 if(!n.trash&&!privateNotes.includes(n)&&notifications){
  const selected=notifications.selected.has(n.id),button=el('button','notification-toggle',selected?'Clear notification':'Show in notifications');
  button.type='button';button.setAttribute('aria-pressed',selected);button.title='Show this note in this device?s notifications until cleared (browser support varies).';
- button.onclick=async()=>{button.disabled=true;try{const shown=await notifications.toggle(n);if(shown!==undefined)toast(shown?'Note shown in notifications on this device':'Notification cleared');render();}catch(error){toast(error.message);}finally{button.disabled=false;}};
+ button.onclick=async()=>{button.disabled=true;try{const shown=await (selected?notifications.clear(n):notifications.toggle(n));if(shown!==undefined)toast(shown?'Note shown in notifications on this device':'Notification cleared');render();}catch(error){toast(error.message);}finally{button.disabled=false;}};
  article.append(button);
 }
 return article;}

@@ -43,13 +43,43 @@ test('denied permission and unsupported browsers give actionable errors',async()
  const unsupported=new NoteNotifications({notification:null,workers:null});await unsupported.setAccount('a');
  await assert.rejects(unsupported.toggle(note),/not supported/);
 });
-test('notification worker clears on the clear action and focuses the app on an ordinary click',async()=>{
- const events={},messages=[];let closed=0,focused=0;
- const self={addEventListener(name,fn){events[name]=fn;},clients:{async matchAll(){return [{postMessage(message){messages.push(message);},async focus(){focused++;}}];}}};
+test('explicit clear never shows a missing notification and does not ask for permission',async()=>{
+ const f=fixture();await f.manager.setAccount('a');await f.manager.toggle(note);
+ f.active.clear();f.notification.permission='denied';
+ await f.manager.clear(note);
+ assert.equal(f.shown.length,1);assert.equal(f.requested,0);assert.equal(f.manager.selected.has(note.id),false);
+});
+test('clear removes only the selected note and stale notification snapshots cannot restore it',async()=>{
+ const f=fixture();await f.manager.setAccount('a');await f.manager.toggle(note);await f.manager.toggle({...note,id:'n2'});
+ const stale=[...f.active.values()][0];await f.manager.clear(note);
+ assert.equal(f.active.size,1);assert.equal(f.manager.selected.has('n2'),true);
+ f.registration.getNotifications=async()=>[stale];
+ await f.manager.sync([{...note,body:'Updated'}]);
+ assert.equal(f.shown.length,2);assert.equal(f.manager.selected.has(note.id),false);
+});
+test('worker clear wins over an in-flight click restoration',async()=>{
+ const handlers={},active=new Map();let release,reply;
+ const original={title:'Note',body:'Text',tag:'ticky-note:a:n1',data:{issuedAt:1},close(){active.delete(this.tag);}};
+ active.set(original.tag,original);
+ const self={addEventListener(name,fn){handlers[name]=fn;},registration:{async getNotifications(){return [...active.values()];},async showNotification(title,options){await new Promise(resolve=>{release=resolve;});active.set(options.tag,{...original,...options});}},clients:{async matchAll(){return [{async focus(){},postMessage(){}}];}}};
+ require('node:vm').runInNewContext(require('node:fs').readFileSync('notification-worker.js','utf8'),{self});
+ let clicked,cleared;
+ handlers.notificationclick({action:'',notification:original,waitUntil(p){clicked=p;}});
+ await new Promise(resolve=>setImmediate(resolve));
+ handlers.message({data:{type:'clear-note-notification',tag:original.tag},ports:[{postMessage(value){reply=value;}}],waitUntil(p){cleared=p;}});
+ release();await clicked;await cleared;
+ assert.equal(active.size,0);assert.equal(reply.ok,true);
+});
+test('notification worker clears only on clear and replaces clicked notifications before opening the app',async()=>{
+ const events={},messages=[],shown=[];let closed=0,focused=0;
+ const self={registration:{async showNotification(title,options){shown.push({title,...options});}},addEventListener(name,fn){events[name]=fn;},clients:{async matchAll(){return [{postMessage(message){messages.push(message);},async focus(){assert.equal(shown.length,1);focused++;}}];}}};
  require('node:vm').runInNewContext(require('node:fs').readFileSync('notification-worker.js','utf8'),{self});
  let completed;
  events.notificationclick({action:'clear',notification:{close(){closed++;}},waitUntil(p){completed=p;}});await completed;
- assert.equal(closed,1);assert.equal(messages[0].type,'note-notifications-changed');
- events.notificationclick({action:'',notification:{close(){closed++;}},waitUntil(p){completed=p;}});await completed;
- assert.equal(focused,1);assert.equal(closed,1);
+ assert.equal(closed,1);assert.equal(messages[0].type,'note-notifications-changed');assert.equal(shown.length,0);
+ events.notificationclick({action:'',notification:{title:'Shopping',body:'Milk',tag:'ticky-note:a:n1',data:{accountId:'a',noteId:'n1'},close(){closed++;}},waitUntil(p){completed=p;}});await completed;
+ assert.equal(focused,1);assert.equal(closed,2);
+ assert.equal(shown[0].title,'Shopping');assert.equal(shown[0].body,'Milk');
+ assert.equal(shown[0].tag,'ticky-note:a:n1');assert.equal(shown[0].requireInteraction,true);
+ assert.equal(shown[0].actions[0].action,'clear');
 });
