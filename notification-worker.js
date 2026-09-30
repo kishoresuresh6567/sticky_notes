@@ -68,6 +68,12 @@ self.addEventListener('notificationclick',event=>{
       if((notification.data?.issuedAt||0)<=clearedTags.get(notification.tag))return;
       clearedTags.delete(notification.tag);
     }
+    const windows=await self.clients.matchAll({type:'window',includeUncontrolled:true});
+    const target={accountId:notification.data?.accountId,noteId:notification.data?.noteId};
+    if(windows.length){
+      await windows[0].focus();
+      windows[0].postMessage({type:'open-note',...target});
+    }else await self.clients.openWindow('/#note='+encodeURIComponent(JSON.stringify(target)));
     const existing=(await self.registration.getNotifications()).filter(n=>sameNote(n,notification));
     const snapshot=existing.reduce((a,b)=>newer(a,b)>=0?a:b,notification);
     // A clicked card can still appear in getNotifications() before the OS
@@ -80,8 +86,5 @@ self.addEventListener('notificationclick',event=>{
       requireInteraction:true,silent:true,renotify:false,
       actions:[{action:'clear',title:'Clear notification'}]
     });
-    const windows=await self.clients.matchAll({type:'window',includeUncontrolled:true});
-    if(windows.length)await windows[0].focus();
-    else await self.clients.openWindow('/');
   }));
 });

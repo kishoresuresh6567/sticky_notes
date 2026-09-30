@@ -30,6 +30,35 @@ test('notification button becomes a status until the system notification is dism
   assert.equal(makeCard().children.find(child=>child.className==='notification-toggle').textContent,'Show in browser');
 });
 
+test('default note order stays stable after an older note is edited',()=>{
+  assert.match(fs.readFileSync('index.html','utf8'),/id="sort"[^>]*><option value="created">/);
+  const a=app();
+  a.run("notes=[{id:'old',title:'Old',body:'',type:'text',created:1,updated:1},{id:'new',title:'New',body:'',type:'text',created:2,updated:2}];render()");
+  const titles=()=>a.elements.get('#board').children.find(child=>child.className==='grid').children.filter(child=>child.className.startsWith('note ')).map(child=>child.children[0].children[0].textContent);
+  assert.deepEqual(titles(),['New','Old']);
+  a.run("notes[0].body='Edited';notes[0].updated=10;render()");
+  assert.deepEqual(titles(),['New','Old']);
+});
+
+test('notification navigation waits for loading, clears filters and guards account ownership',async()=>{
+ const a=app();
+ a.run("pendingNotificationNote={accountId:'a',noteId:'n1'};openNotificationNote()");
+ assert.equal(a.run('pendingNotificationNote.noteId'),'n1');
+ a.cloud.open=async id=>{a.cloud.id=id;a.cloud.ready=true;return {notes:[{id:'n1',title:'Target',body:'',type:'text',created:1,updated:1}],categories:[],vault:null};};
+ await a.run("activateNotes({id:'a'})");
+ assert.equal(a.run('highlightedNoteId'),'n1');
+ let scrolled=0,focused=0;
+ a.context.document.querySelectorAll=selector=>selector==='[data-note-id]'?[{dataset:{noteId:'n1'},scrollIntoView(){scrolled++;},focus(){focused++;}}]:[];
+ a.run("view='category';activeCategory='hidden';$('#search').value='no match';pendingNotificationNote={accountId:'a',noteId:'n1'};openNotificationNote()");
+ assert.equal(a.run('view'),'all');assert.equal(a.run("$('#search').value"),'');
+ assert.equal(scrolled,1);assert.equal(focused,1);
+ a.run("highlightedNoteId=null;pendingNotificationNote={accountId:'other',noteId:'n1'};openNotificationNote()");
+ assert.equal(a.run('highlightedNoteId'),null);
+ a.run("pendingNotificationNote={accountId:'a',noteId:'deleted'};openNotificationNote()");
+ assert.equal(a.run('highlightedNoteId'),null);
+ assert.match(a.elements.get('#toast').textContent,/no longer available/);
+});
+
 test('account changes clear notes, drafts, categories and decrypted vault state',async()=>{
   const a=app();await a.run("activateNotes({id:'a'})");
   a.run("notes=[{id:'a-secret'}];categories=[{id:'private-category'}];privateNotes=[{body:'vault secret'}];key={};editing={body:'draft'};pendingVaultNote={body:'pending secret'};view='vault';$('#note-body').value='draft';$('#vault-password').value='password';");

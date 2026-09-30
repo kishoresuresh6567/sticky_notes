@@ -18,10 +18,28 @@ async function syncNotifications(snapshot=notes){
  if(!accountId||!cloud.ready||cloud.id!==accountId)return;
  try{await notifications?.sync(snapshot);render();}catch(error){toast(error.message||'Could not update notifications. Check browser permissions.');}
 }
-window.navigator?.serviceWorker?.addEventListener('message',event=>{if(event.data?.type==='note-notifications-changed')void syncNotifications();});
+window.navigator?.serviceWorker?.addEventListener('message',event=>{
+ if(event.data?.type==='note-notifications-changed')void syncNotifications();
+ if(event.data?.type==='open-note'){pendingNotificationNote=event.data;openNotificationNote();}
+});
 window.addEventListener?.('focus',()=>{if(accountId)void syncNotifications();});
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&accountId)void syncNotifications();});
 let accountId=null,accountEpoch=0,cloudError='';
+let pendingNotificationNote=null,highlightedNoteId=null;
+try{if(window.location?.hash.startsWith('#note='))pendingNotificationNote=JSON.parse(decodeURIComponent(window.location.hash.slice(6)));}catch{}
+function openNotificationNote(){
+ const target=pendingNotificationNote;
+ if(!target||!accountId||!cloud.ready||cloud.id!==accountId)return;
+ pendingNotificationNote=null;
+ if(target.accountId!==accountId){toast('Sign in with the account that owns this notification.');return;}
+ const note=notes.find(n=>n.id===target.noteId&&!n.trash);
+ if(!note){toast('This note is no longer available.');return;}
+ view='all';activeCategory='';$('#search').value='';highlightedNoteId=note.id;
+ render();
+ const card=[...document.querySelectorAll('[data-note-id]')].find(node=>node.dataset.noteId===note.id);
+ card?.scrollIntoView({block:'center',behavior:'smooth'});card?.focus({preventScroll:true});
+ if(window.location?.hash.startsWith('#note='))window.history?.replaceState(null,'',window.location.pathname+window.location.search);
+}
 let categories=[],activeCategory='';
 
 function categoryName(id){return categories.find(category=>category.id===id)?.name||'Uncategorized';}
@@ -95,7 +113,7 @@ async function activateNotes(user){
  if(data){notes=data.notes;categories=data.categories;vaultRecord=data.vault;}
  void syncNotifications();
  document.querySelector('.save-status').textContent=id?'Saved to your account':'';
- render();
+ render();openNotificationNote();
 }
 window.activateNotes=activateNotes;
 function toast(message){$('#toast').textContent=message;$('#toast').classList.add('visible');clearTimeout(toast.timeout);toast.timeout=setTimeout(()=>$('#toast').classList.remove('visible'),3500);}
@@ -163,7 +181,7 @@ async function lockVault(){const epoch=accountEpoch;await saving.catch(()=>{});i
 ['pointerdown','keydown'].forEach(event=>document.addEventListener(event,resetTimer));
 function render(){renderCategories();const titles={all:['All your notes','Big ideas, daily to-dos, and everything in between.'],pinned:['Keep these close','Your important things, always within reach.'],checklist:['One thing at a time','A little progress feels pretty good.'],vault:['Your private space','Encrypted notes for the things that are just for you.'],trash:['A second chance','Restore notes whenever you need them.'],category:[categoryName(activeCategory),'Everything in this category, in one place.']};$('#page-title').textContent=titles[view][0];$('#page-title').append(el('span','','.'));$('#page-subtitle').textContent=titles[view][1];$('#crumb').textContent={all:'All notes',pinned:'Pinned notes',checklist:'Checklists',vault:'Private vault',trash:'Trash',category:categoryName(activeCategory)}[view];document.querySelectorAll('.nav').forEach(b=>b.classList.toggle('active',b.dataset.view===view));$('#count').textContent=notes.filter(n=>!n.trash).length;$('#lock-vault').hidden=!key;$('#board').replaceChildren();$('#vault-gate').hidden=true;
 if(view==='vault'&&!key){const gate=$('#vault-gate');gate.hidden=false;gate.replaceChildren();const box=el('div','empty');box.append(el('div','','♙'),el('h2','',vaultRecord?'A little privacy goes a long way.':'Some things are just for you.'),el('p','','Store passwords, usernames, and bank details in your encrypted vault.\nYour password unlocks it on any device signed in to this account.'));const b=el('button','primary',vaultRecord?'Unlock your vault':'Create your vault');b.onclick=openVault;box.append(b);gate.append(box);$('#result-count').textContent='Private & encrypted';return;}
-const q=$('#search').value.toLowerCase();let list=(view==='vault'?privateNotes:view==='trash'?[...notes,...privateNotes]:notes).filter(n=>(view==='trash'?n.trash:!n.trash)&&(view!=='category'||(n.category||'')===activeCategory)&&(view!=='pinned'||n.pinned)&&(view!=='checklist'||n.type==='checklist')&&(`${n.title}\n${n.body}`).toLowerCase().includes(q));list.sort((a,b)=>$('#sort').value==='title'?a.title.localeCompare(b.title):b[$('#sort').value]-a[$('#sort').value]);$('#result-count').textContent=`${list.length} note${list.length===1?'':'s'}`;
+const q=$('#search').value.toLowerCase();let list=(view==='vault'?privateNotes:view==='trash'?[...notes,...privateNotes]:notes).filter(n=>(view==='trash'?n.trash:!n.trash)&&(view!=='category'||(n.category||'')===activeCategory)&&(view!=='pinned'||n.pinned)&&(view!=='checklist'||n.type==='checklist')&&(`${n.title}\n${n.body}`).toLowerCase().includes(q));list.sort((a,b)=>$('#sort').value==='title'?a.title.localeCompare(b.title):b[$('#sort').value||'created']-a[$('#sort').value||'created']);$('#result-count').textContent=`${list.length} note${list.length===1?'':'s'}`;
 const pinned=list.filter(n=>n.pinned),other=list.filter(n=>!n.pinned);if(pinned.length&&view!=='trash')section('♧  PINNED',pinned);if(other.length||!list.length||view==='trash')section(view==='trash'?'DELETED NOTES':pinned.length?'EVERYTHING ELSE':'YOUR NOTES',view==='trash'?list:other,true);
 }
 function section(title,list,add=false){const board=$('#board');board.append(el('div','section-label',title));const grid=el('div','grid');list.forEach(n=>grid.append(card(n)));if(add&&view!=='trash'){const b=el('button','add-card');b.append(el('span','','＋'),el('div','','A little thought? Write it down.'),el('small','','Your next idea starts here'));b.onclick=()=>openEditor();grid.append(b);}if(!list.length&&view==='trash')grid.append(el('p','hint','No deleted notes. A clean little slate.'));board.append(grid);}
@@ -179,6 +197,8 @@ if(!n.trash&&!privateNotes.includes(n)&&notifications){
  }
  article.append(el('small','notification-hint','Snapshot only. Dismiss it in your notification center. Edits stay in the app.'));
 }
+article.dataset.noteId=n.id;article.tabIndex=-1;
+if(highlightedNoteId===n.id)article.classList.add('notification-target');
 return article;}
 function openEditor(n){if(!cloud.ready)return;editing=n||null;populateCategorySelect(n?.category||(view==='category'?activeCategory:''));selectedColor=n?.color||'yellow';$('#note-title').value=n?.title||'';$('#note-body').value=n?.body||'';$('#note-type').value=n?.type||(view==='checklist'?'checklist':'text');$('#note-pin').checked=n?.pinned||false;$('#note-private').checked=view==='vault';$('#note-private').disabled=!!n;$('#editor-error').textContent='';resetListEditor();editorItems=(n?.body||'').split('\n').map((text,i)=>({text,checked:!!n?.checked?.includes(i)}));renderEditorType();renderSwatches();$('#editor').showModal();$('#note-title').focus();}
 let editorItems=[];

@@ -58,8 +58,8 @@ test('clear removes only the selected note and stale notification snapshots cann
  await f.manager.sync([{...note,body:'Updated'}]);
  assert.equal(f.shown.length,2);assert.equal(f.manager.selected.has(note.id),false);
 });
-function workerFixture({closeDelayReads=0,refuseClose=false}={}){
- const handlers={},active=[],shown=[],liveAtShow=[];
+function workerFixture({closeDelayReads=0,refuseClose=false,noWindow=false}={}){
+ const handlers={},active=[],shown=[],liveAtShow=[],messages=[],opened=[];
  const registration={
   async getNotifications(){
    for(const notification of active.slice()){
@@ -74,13 +74,24 @@ function workerFixture({closeDelayReads=0,refuseClose=false}={}){
    active.push(notification);
   }
  };
- const self={registration,addEventListener(name,fn){handlers[name]=fn;},clients:{async matchAll(){return [{async focus(){},postMessage(){}}];}}};
+ const self={registration,addEventListener(name,fn){handlers[name]=fn;},clients:{async matchAll(){return noWindow?[]:[{async focus(){},postMessage(message){messages.push(message);}}];},async openWindow(url){opened.push(url);}}};
  require('node:vm').runInNewContext(require('node:fs').readFileSync('notification-worker.js','utf8'),{self,setTimeout});
  registration.active={postMessage(data,ports){handlers.message({data,ports,waitUntil(p){p.catch(()=>{});}});}};
  const manager=new NoteNotifications({notification:{permission:'granted'},workers:{async register(){},ready:Promise.resolve(registration)}});
  async function click(notification,action=''){let promise;handlers.notificationclick({notification,action,waitUntil(p){promise=p;}});await promise;}
- return {manager,registration,active,shown,liveAtShow,click};
+ return {manager,registration,active,shown,liveAtShow,click,messages,opened};
 }
+
+test('notification clicks target the correct note in existing and newly opened windows',async()=>{
+ for(const noWindow of [false,true]){
+  const f=workerFixture({noWindow});await f.manager.setAccount('account/a');await f.manager.show(note);
+  await f.click(f.active[0]);
+  const target=noWindow?JSON.parse(decodeURIComponent(f.opened[0].split('#note=')[1])):f.messages[0];
+  assert.equal(target.accountId,'account/a');assert.equal(target.noteId,note.id);
+  if(!noWindow)assert.equal(target.type,'open-note');
+  assert.equal(f.active.length,1);
+ }
+});
 
 test('every checkbox edit leaves the original snapshot unchanged without publishing another notification',async()=>{
  const f=workerFixture();await f.manager.setAccount('a');
