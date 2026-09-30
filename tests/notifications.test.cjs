@@ -77,7 +77,7 @@ function workerFixture({closeDelayReads=0,refuseClose=false}={}){
  require('node:vm').runInNewContext(require('node:fs').readFileSync('notification-worker.js','utf8'),{self,setTimeout});
  registration.active={postMessage(data,ports){handlers.message({data,ports,waitUntil(p){p.catch(()=>{});}});}};
  const manager=new NoteNotifications({notification:{permission:'granted'},workers:{async register(){},ready:Promise.resolve(registration)}});
- async function click(notification){let promise;handlers.notificationclick({notification,action:'',waitUntil(p){promise=p;}});await promise;}
+ async function click(notification,action=''){let promise;handlers.notificationclick({notification,action,waitUntil(p){promise=p;}});await promise;}
  return {manager,registration,active,shown,liveAtShow,click};
 }
 
@@ -104,10 +104,35 @@ test('ten concurrent saves do not publish notifications, even when the browser r
  assert.equal(f.shown.length,1);
 });
 
-test('opening a present or browser-consumed notification never recreates it',async()=>{
- const f=workerFixture();await f.manager.setAccount('a');await f.manager.toggle(note);
- const original=f.active[0];await f.click(original);assert.equal(f.shown.length,1);
- original.close();await f.click(original);assert.equal(f.shown.length,1);assert.equal(f.active.length,0);
+test('opening a notification restores one original snapshot whether dismissal is immediate or delayed',async()=>{
+ for(const consumed of [true,false]){
+  const f=workerFixture({closeDelayReads:3});await f.manager.setAccount('a');await f.manager.toggle(note);
+  const original=f.active[0];
+  await f.manager.sync([{...note,body:'Edited text',checked:[0,1]}]);
+  if(consumed)f.active.splice(0);
+  await f.click(original);
+  assert.equal(f.active.length,1);assert.equal(f.shown.length,2);assert.equal(f.liveAtShow.at(-1),0);
+  assert.equal(f.active[0].body,original.body);assert.equal(f.active[0].title,original.title);
+  assert.equal(f.active[0].tag,original.tag);assert.equal(f.active[0].renotify,false);
+  await f.manager.sync([{...note,body:'Another edit'}]);assert.equal(f.shown.length,2);
+ }
+});
+
+test('explicit clear from the app or notification prevents restoration on a late click',async()=>{
+ for(const source of ['app','notification']){
+  const f=workerFixture();await f.manager.setAccount('a');await f.manager.toggle(note);
+  const original=f.active[0];
+  if(source==='app')await f.manager.clear(note);else await f.click(original,'clear');
+  await f.click(original);assert.equal(f.active.length,0);assert.equal(f.shown.length,1);
+ }
+});
+
+test('clear requested during delayed click removal prevents its replacement',async()=>{
+ const f=workerFixture({closeDelayReads:3});await f.manager.setAccount('a');await f.manager.toggle(note);
+ const opened=f.click(f.active[0]);
+ await new Promise(resolve=>setImmediate(resolve));
+ const cleared=f.manager.clear(note);
+ await Promise.all([opened,cleared]);assert.equal(f.active.length,0);assert.equal(f.shown.length,1);
 });
 
 test('old client automatic update messages are ignored by the worker',async()=>{

@@ -69,11 +69,17 @@ self.addEventListener('notificationclick',event=>{
       clearedTags.delete(notification.tag);
     }
     const existing=(await self.registration.getNotifications()).filter(n=>sameNote(n,notification));
-    if(existing.length){
-      const newest=existing.reduce((a,b)=>newer(a,b)>=0?a:b);
-      existing.filter(n=>n!==newest).forEach(n=>n.close());
-    }
-    // Opening a notification must never publish another one, on any device.
+    const snapshot=existing.reduce((a,b)=>newer(a,b)>=0?a:b,notification);
+    // A clicked card can still appear in getNotifications() before the OS
+    // dismisses it. Explicitly finish removing it before restoring one snapshot.
+    notification.close();
+    await removeAndConfirm(item=>sameNote(item,notification));
+    if(clearedTags.has(notification.tag))return;
+    await self.registration.showNotification(snapshot.title,{
+      body:snapshot.body,tag:snapshot.tag,data:snapshot.data,
+      requireInteraction:true,silent:true,renotify:false,
+      actions:[{action:'clear',title:'Clear notification'}]
+    });
     const windows=await self.clients.matchAll({type:'window',includeUncontrolled:true});
     if(windows.length)await windows[0].focus();
     else await self.clients.openWindow('/');
