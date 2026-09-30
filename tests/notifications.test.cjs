@@ -86,10 +86,11 @@ test('notification worker clears only on clear and replaces clicked notification
 
 
 function workerFixture(){
- const handlers={},active=[],shown=[];
+ const handlers={},active=[],shown=[],liveAtShow=[];
  const registration={
   async getNotifications(){return active.slice();},
   async showNotification(title,options){
+   liveAtShow.push(active.filter(n=>n.tag===options.tag).length);
    shown.push({title,...options});
    const notification={title,...options,close(){const i=active.indexOf(this);if(i>=0)active.splice(i,1);}};
    active.push(notification);
@@ -100,7 +101,7 @@ function workerFixture(){
  registration.active={postMessage(data,ports){handlers.message({data,ports,waitUntil(p){p.catch(()=>{});}});}};
  const manager=new NoteNotifications({notification:{permission:'granted'},workers:{async register(){},ready:Promise.resolve(registration)}});
  async function click(notification){let promise;handlers.notificationclick({notification,action:'',waitUntil(p){promise=p;}});await promise;}
- return {manager,registration,active,shown,click};
+ return {manager,registration,active,shown,liveAtShow,click};
 }
 test('updates close older cards even when the platform does not replace notifications by tag',async()=>{
  const f=workerFixture();await f.manager.setAccount('a');
@@ -123,4 +124,29 @@ test('existing duplicates collapse on sync and clicking an older card cannot res
  await f.manager.sync([latest]);assert.equal(f.active.length,1);
  const count=f.shown.length;await f.click(old);
  assert.equal(f.active.length,1);assert.equal(f.shown.length,count);assert.match(f.active[0].body,/Latest/);
+});
+
+test('ten rapid checkbox saves produce one final update without closing the canonical notification first',async t=>{
+ const f=workerFixture();await f.manager.setAccount('a');await f.manager.toggle({...note,updated:1});
+ t.mock.timers.enable({apis:['setTimeout']});
+ const pending=[];
+ for(let i=1;i<=10;i++){
+  pending.push(f.manager.scheduleSync([{...note,body:Array.from({length:10},(_,j)=>`Item ${j+1}`).join('\n'),checked:Array.from({length:i},(_,j)=>j),updated:i+1}]));
+  t.mock.timers.tick(100);
+ }
+ assert.equal(f.shown.length,1);
+ t.mock.timers.tick(1399);assert.equal(f.shown.length,1);
+ t.mock.timers.tick(1);await Promise.all(pending);
+ assert.equal(f.shown.length,2);assert.equal(f.active.length,1);
+ assert.equal(f.liveAtShow[1],1);
+ assert.equal(f.active[0].body.split('\n').filter(line=>line.startsWith('\u2611')).length,10);
+ assert.equal(f.active[0].renotify,false);
+});
+
+test('pending checkbox notification updates are cancelled on sign-out',async t=>{
+ const f=workerFixture();await f.manager.setAccount('a');await f.manager.toggle(note);
+ t.mock.timers.enable({apis:['setTimeout']});
+ const pending=f.manager.scheduleSync([{...note,body:'Queued edit',updated:2}]);
+ await f.manager.setAccount(null);t.mock.timers.tick(2000);await pending;
+ assert.equal(f.active.length,0);assert.equal(f.shown.length,1);
 });

@@ -16,9 +16,13 @@ async function replace(title,options,onlyIfPresent){
     return;
   }
   if(existing.length===1&&existing[0].title===title&&existing[0].body===options.body)return;
-  // Explicitly remove older cards rather than relying only on OS tag replacement.
-  existing.forEach(n=>n.close());
+  // Do not close the canonical card before updating it: doing so turns every
+  // checkbox save into a fresh system notification instead of a tag replacement.
+  existing.filter(n=>n.tag!==options.tag).forEach(n=>n.close());
   await self.registration.showNotification(title,{...options,renotify:false});
+  const remaining=(await self.registration.getNotifications()).filter(n=>sameNote(n,options));
+  const keep=remaining.reduce((a,b)=>!a||newer(b,a)>=0?b:a,null);
+  remaining.filter(n=>n!==keep).forEach(n=>n.close());
 }
 self.addEventListener('message',event=>{
   const message=event.data,kind=message?.type;

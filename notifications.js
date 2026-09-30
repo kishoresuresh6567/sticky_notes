@@ -1,6 +1,6 @@
 class NoteNotifications {
   constructor({notification=globalThis.Notification,workers=globalThis.navigator?.serviceWorker}={}){
-    this.notification=notification;this.workers=workers;this.account=null;this.epoch=0;this.selected=new Set();this.cleared=new Set();this.pending=Promise.resolve();
+    this.notification=notification;this.workers=workers;this.account=null;this.epoch=0;this.selected=new Set();this.cleared=new Set();this.pending=Promise.resolve();this.syncTimer=null;this.syncWaiters=[];
   }
   supported(){return !!(this.notification&&this.workers);}
   async registration(){
@@ -11,6 +11,8 @@ class NoteNotifications {
   enqueue(task){const operation=this.pending.catch(()=>{}).then(task);this.pending=operation;return operation;}
   ours(notification){return notification.tag.startsWith('ticky-note:');}
   setAccount(id){
+    clearTimeout(this.syncTimer);this.syncTimer=null;
+    this.syncWaiters.splice(0).forEach(waiter=>waiter.resolve());
     this.account=id;this.epoch++;this.selected.clear();
     if(!this.supported())return Promise.resolve();
     return this.enqueue(async()=>{
@@ -40,7 +42,8 @@ class NoteNotifications {
     if(registration.active)return this.workerRequest(registration,{type:'replace-note-notification',title,options,onlyIfPresent});
     const existing=(await registration.getNotifications()).filter(n=>this.ours(n)&&n.data?.accountId===id&&n.data?.noteId===note.id);
     if(onlyIfPresent&&!existing.length)return;
-    existing.forEach(n=>n.close());
+    // Keep the canonical notification alive so the browser replaces its tag.
+    existing.filter(n=>n.tag!==options.tag).forEach(n=>n.close());
     await registration.showNotification(title,options);
   }
   clear(note){
@@ -72,6 +75,16 @@ class NoteNotifications {
       if(epoch!==this.epoch){for(const n of await registration.getNotifications())if(this.ours(n)&&n.data?.accountId===id)n.close();return;}
       this.selected.add(note.id);return true;
     });
+  }
+  scheduleSync(notes){
+    clearTimeout(this.syncTimer);
+    const snapshot=structuredClone(notes);
+    const result=new Promise((resolve,reject)=>this.syncWaiters.push({resolve,reject}));
+    this.syncTimer=setTimeout(()=>{
+      this.syncTimer=null;const waiters=this.syncWaiters.splice(0);
+      this.sync(snapshot).then(()=>waiters.forEach(w=>w.resolve()),error=>waiters.forEach(w=>w.reject(error)));
+    },1500);
+    return result;
   }
   sync(notes){
     const epoch=this.epoch,id=this.account;

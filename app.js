@@ -13,10 +13,10 @@ document.querySelectorAll('button[data-theme]').forEach(button=>button.addEventL
 const colors = {yellow:'Butter yellow',green:'Sage green',pink:'Soft rose',blue:'Sky blue',purple:'Lavender',cream:'Warm neutral',gold:'Sunshine',orange:'Tangerine',coral:'Coral red',teal:'Deep teal',cobalt:'Cobalt blue',violet:'Royal violet',berry:'Berry',navy:'Midnight blue',charcoal:'Charcoal'};
 const cloud=window.accountCloud;
 const notifications=window.noteNotifications;
-async function syncNotifications(snapshot=notes){
+async function syncNotifications(snapshot=notes,defer=false){
  // An empty workspace while loading is not an authoritative deletion of notes.
  if(!accountId||!cloud.ready||cloud.id!==accountId)return;
- try{await notifications?.sync(snapshot);render();}catch{toast('Could not update notifications. Check browser permissions.');}
+ try{await (defer&&notifications?.scheduleSync?notifications.scheduleSync(snapshot):notifications?.sync(snapshot));render();}catch{toast('Could not update notifications. Check browser permissions.');}
 }
 window.navigator?.serviceWorker?.addEventListener('message',event=>{if(event.data?.type==='note-notifications-changed')void syncNotifications();});
 window.addEventListener?.('focus',()=>{if(accountId)void syncNotifications();});
@@ -144,7 +144,7 @@ async function commit(overrides={}){
  // Prevent a second edit from racing a snapshot save.
  const surfaces=document.querySelectorAll('main,aside,#editor,#vault-dialog');
  surfaces.forEach(node=>node.inert=true);
- try{await persist(overrides);if(epoch!==accountEpoch)return false;cloudError='';$('#sync-error').hidden=true;document.querySelector('.save-status').textContent='Saved to your account';void syncNotifications(overrides.notes??notes);return true;}
+ try{await persist(overrides);if(epoch!==accountEpoch)return false;cloudError='';$('#sync-error').hidden=true;document.querySelector('.save-status').textContent='Saved to your account';void syncNotifications(overrides.notes??notes,!overrides.notes);return true;}
  catch(error){if(epoch===accountEpoch){cloudError=error.message;$('#sync-error').textContent=error.message;$('#sync-error').hidden=false;document.querySelector('.save-status').textContent='Not saved - retry or reload';toast(error.message);}return false;}
  finally{surfaces.forEach(node=>node.inert=false);}
 }
