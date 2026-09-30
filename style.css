@@ -107,3 +107,13 @@ h1{font-weight:700;letter-spacing:-1.2px}.brand{font-family:"Trebuchet MS","Sego
 body.auth-locked > :not(#account-dialog){display:none!important}
 body.auth-locked #account-dialog::backdrop{background:#fbf7f2;backdrop-filter:none}
 body.auth-locked #close-account{display:none}
+
+#note-body[hidden],#list-editor[hidden]{display:none}
+#list-editor{min-height:180px;max-height:42vh;overflow-y:auto;margin:12px 0}
+.editor-list-row{display:flex;align-items:center;gap:10px;margin:6px 0}
+.editor-list-row .editor-item-text{flex:1;min-width:0;width:auto;margin:0;padding:9px 6px;border:0;border-bottom:1px solid var(--line);border-radius:0;background:transparent;color:inherit;font:inherit}
+.editor-list-row .editor-item-check{width:18px;height:18px;flex-shrink:0;margin:0;accent-color:var(--green)}
+.editor-list-row.done .editor-item-text{text-decoration:line-through;opacity:.65}
+.editor-bullet{width:18px;flex-shrink:0;text-align:center}
+.editor-item-remove{padding:8px;font-size:20px;opacity:.65}
+#add-editor-item{margin:10px 0;padding:8px 12px;border:1px solid var(--line);border-radius:6px;color:inherit}

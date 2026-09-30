@@ -6,7 +6,7 @@ const {webcrypto}=require('node:crypto');
 
 function app(){
   const elements=new Map(),saved=[];
-  function element(){return {value:'',textContent:'',dataset:{},open:false,classList:{add(){},remove(){},toggle(){}},setAttribute(){},append(){},replaceChildren(){},addEventListener(){},close(){this.open=false;},showModal(){this.open=true;},reset(){},focus(){}};}
+  function element(){return {value:'',textContent:'',children:[],dataset:{},open:false,classList:{add(){},remove(){},toggle(){}},setAttribute(){},append(...items){this.children.push(...items);},replaceChildren(...items){this.children=items;},addEventListener(){},close(){this.open=false;},showModal(){this.open=true;},reset(){},focus(){},setSelectionRange(start,end){this.selectionStart=start;this.selectionEnd=end;}};}
   const document={documentElement:element(),querySelector(s){if(!elements.has(s))elements.set(s,element());return elements.get(s);},querySelectorAll(){return [];},createElement:element,createElementNS:element,addEventListener(){}};
   const cloud={id:null,ready:false,async open(id){this.id=id;this.ready=!!id;return id?{notes:[],categories:[],vault:null}:null;},async save(data){saved.push({id:this.id,data:structuredClone(data)});}};
   const context=vm.createContext({document,window:{accountCloud:cloud},localStorage:{getItem(k){assert.equal(k,'little-notes-theme');return null;},setItem(){throw Error('Notes must not be stored locally');}},crypto:webcrypto,TextEncoder,TextDecoder,Uint8Array,structuredClone,btoa,atob,setTimeout(){return 1;},clearTimeout(){}});
@@ -55,4 +55,46 @@ test('failed editor saves retain the draft and retry without duplicating the not
   await a.elements.get('#note-form').onsubmit({preventDefault(){}});
   assert.equal(a.run('notes.length'),1);assert.equal(a.saved.length,1);
   assert.equal(a.elements.get('#sync-error').hidden,true);
+});
+
+
+test('editor switches between plain text, checklist and bullets without losing text or completion',async()=>{
+ const a=app();await a.run("activateNotes({id:'a'})");
+ a.run("openEditor();$('#note-body').value='First\\nSecond';$('#note-type').value='checklist';$('#note-type').onchange();");
+ assert.equal(a.elements.get('#note-body').hidden,true);
+ assert.equal(a.elements.get('#list-editor').hidden,false);
+ const rows=a.elements.get('#editor-items').children;
+ assert.equal(rows.length,2);assert.equal(rows[0].children[0].type,'checkbox');
+ rows[1].children[0].checked=true;rows[1].children[0].onchange();
+ rows[1].children[1].value='Updated';rows[1].children[1].oninput();
+ a.run("$('#note-type').value='bullets';$('#note-type').onchange();");
+ assert.equal(a.elements.get('#editor-items').children[0].children[0].textContent,'?');
+ a.run("$('#note-type').value='text';$('#note-type').onchange();");
+ assert.equal(a.elements.get('#note-body').hidden,false);
+ assert.equal(a.elements.get('#note-body').value,'First\nUpdated');
+ a.run("$('#note-type').value='checklist';$('#note-type').onchange();");
+ assert.equal(a.elements.get('#editor-items').children[1].children[0].checked,true);
+ await a.elements.get('#note-form').onsubmit({preventDefault(){}});
+ assert.equal(a.saved[0].data.notes[0].body,'First\nUpdated');
+ assert.deepEqual(a.saved[0].data.notes[0].checked,[1]);
+});
+
+test('list editor splits, merges, pastes and removes items and clears drafts on account switch',async()=>{
+ const a=app();await a.run("activateNotes({id:'a'})");
+ a.run("openEditor();$('#note-body').value='FirstSecond';$('#note-type').value='checklist';$('#note-type').onchange();");
+ let input=a.elements.get('#editor-items').children[0].children[1];
+ input.selectionStart=5;input.selectionEnd=5;
+ input.onkeydown({key:'Enter',preventDefault(){}});
+ assert.equal(a.elements.get('#note-body').value,'First\nSecond');
+ input=a.elements.get('#editor-items').children[1].children[1];input.selectionStart=0;input.selectionEnd=0;
+ input.onkeydown({key:'Backspace',preventDefault(){}});
+ assert.equal(a.elements.get('#note-body').value,'FirstSecond');
+ input=a.elements.get('#editor-items').children[0].children[1];input.selectionStart=5;input.selectionEnd=5;
+ input.onpaste({clipboardData:{getData:()=> '\r\nMiddle\r\n'},preventDefault(){}});
+ assert.equal(a.elements.get('#note-body').value,'First\nMiddle\nSecond');
+ a.elements.get('#editor-items').children[1].children[2].onclick();
+ assert.equal(a.elements.get('#note-body').value,'First\nSecond');
+ a.elements.get('#add-editor-item').onclick();assert.equal(a.elements.get('#editor-items').children.length,3);
+ await a.run('activateNotes(null)');assert.equal(a.elements.get('#editor-items').children.length,0);
+ assert.equal(a.run('editorItems.length'),0);
 });
