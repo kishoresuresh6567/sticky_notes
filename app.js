@@ -16,7 +16,7 @@ const notifications=window.noteNotifications;
 async function syncNotifications(snapshot=notes,defer=false){
  // An empty workspace while loading is not an authoritative deletion of notes.
  if(!accountId||!cloud.ready||cloud.id!==accountId)return;
- try{await (defer&&notifications?.scheduleSync?notifications.scheduleSync(snapshot):notifications?.sync(snapshot));render();}catch{toast('Could not update notifications. Check browser permissions.');}
+ try{await (defer&&notifications?.scheduleSync?notifications.scheduleSync(snapshot):notifications?.sync(snapshot));render();}catch(error){toast(error.message||'Could not update notifications. Check browser permissions.');}
 }
 window.navigator?.serviceWorker?.addEventListener('message',event=>{if(event.data?.type==='note-notifications-changed')void syncNotifications();});
 window.addEventListener?.('focus',()=>{if(accountId)void syncNotifications();});

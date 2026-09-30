@@ -62,7 +62,7 @@ test('worker clear wins over an in-flight click restoration',async()=>{
  const original={title:'Note',body:'Text',tag:'ticky-note:a:n1',data:{issuedAt:1},close(){active.delete(this.tag);}};
  // The browser has already consumed the clicked notification.
  const self={addEventListener(name,fn){handlers[name]=fn;},registration:{async getNotifications(){return [...active.values()];},async showNotification(title,options){await new Promise(resolve=>{release=resolve;});active.set(options.tag,{...original,...options});}},clients:{async matchAll(){return [{async focus(){},postMessage(){}}];}}};
- require('node:vm').runInNewContext(require('node:fs').readFileSync('notification-worker.js','utf8'),{self});
+ require('node:vm').runInNewContext(require('node:fs').readFileSync('notification-worker.js','utf8'),{self,setTimeout});
  let clicked,cleared;
  handlers.notificationclick({action:'',notification:original,waitUntil(p){clicked=p;}});
  await new Promise(resolve=>setImmediate(resolve));
@@ -73,7 +73,7 @@ test('worker clear wins over an in-flight click restoration',async()=>{
 test('notification worker clears only on clear and replaces clicked notifications before opening the app',async()=>{
  const events={},messages=[],shown=[];let closed=0,focused=0;
  const self={registration:{async getNotifications(){return [];},async showNotification(title,options){shown.push({title,...options});}},addEventListener(name,fn){events[name]=fn;},clients:{async matchAll(){return [{postMessage(message){messages.push(message);},async focus(){assert.equal(shown.length,1);focused++;}}];}}};
- require('node:vm').runInNewContext(require('node:fs').readFileSync('notification-worker.js','utf8'),{self});
+ require('node:vm').runInNewContext(require('node:fs').readFileSync('notification-worker.js','utf8'),{self,setTimeout});
  let completed;
  events.notificationclick({action:'clear',notification:{tag:'ticky-note:other',close(){closed++;}},waitUntil(p){completed=p;}});await completed;
  assert.equal(closed,1);assert.equal(messages[0].type,'note-notifications-changed');assert.equal(shown.length,0);
@@ -85,19 +85,24 @@ test('notification worker clears only on clear and replaces clicked notification
 });
 
 
-function workerFixture(){
+function workerFixture({closeDelayReads=0,refuseClose=false}={}){
  const handlers={},active=[],shown=[],liveAtShow=[];
  const registration={
-  async getNotifications(){return active.slice();},
+  async getNotifications(){
+   for(const notification of active.slice()){
+    if(notification.closing&&!refuseClose&&--notification.readsLeft<=0)active.splice(active.indexOf(notification),1);
+   }
+   return active.slice();
+  },
   async showNotification(title,options){
    liveAtShow.push(active.filter(n=>n.tag===options.tag).length);
    shown.push({title,...options});
-   const notification={title,...options,close(){const i=active.indexOf(this);if(i>=0)active.splice(i,1);}};
+   const notification={title,...options,close(){if(closeDelayReads||refuseClose){if(!this.closing){this.closing=true;this.readsLeft=closeDelayReads;}return;}const i=active.indexOf(this);if(i>=0)active.splice(i,1);}};
    active.push(notification);
   }
  };
  const self={registration,addEventListener(name,fn){handlers[name]=fn;},clients:{async matchAll(){return [{async focus(){},postMessage(){}}];}}};
- require('node:vm').runInNewContext(require('node:fs').readFileSync('notification-worker.js','utf8'),{self});
+ require('node:vm').runInNewContext(require('node:fs').readFileSync('notification-worker.js','utf8'),{self,setTimeout});
  registration.active={postMessage(data,ports){handlers.message({data,ports,waitUntil(p){p.catch(()=>{});}});}};
  const manager=new NoteNotifications({notification:{permission:'granted'},workers:{async register(){},ready:Promise.resolve(registration)}});
  async function click(notification){let promise;handlers.notificationclick({notification,action:'',waitUntil(p){promise=p;}});await promise;}
@@ -126,7 +131,7 @@ test('existing duplicates collapse on sync and clicking an older card cannot res
  assert.equal(f.active.length,1);assert.equal(f.shown.length,count);assert.match(f.active[0].body,/Latest/);
 });
 
-test('ten rapid checkbox saves produce one final update without closing the canonical notification first',async t=>{
+test('ten rapid checkbox saves produce one final update after removing the previous card',async t=>{
  const f=workerFixture();await f.manager.setAccount('a');await f.manager.toggle({...note,updated:1});
  t.mock.timers.enable({apis:['setTimeout']});
  const pending=[];
@@ -138,7 +143,7 @@ test('ten rapid checkbox saves produce one final update without closing the cano
  t.mock.timers.tick(1399);assert.equal(f.shown.length,1);
  t.mock.timers.tick(1);await Promise.all(pending);
  assert.equal(f.shown.length,2);assert.equal(f.active.length,1);
- assert.equal(f.liveAtShow[1],1);
+ assert.equal(f.liveAtShow[1],0);
  assert.equal(f.active[0].body.split('\n').filter(line=>line.startsWith('\u2611')).length,10);
  assert.equal(f.active[0].renotify,false);
 });
@@ -149,4 +154,24 @@ test('pending checkbox notification updates are cancelled on sign-out',async t=>
  const pending=f.manager.scheduleSync([{...note,body:'Queued edit',updated:2}]);
  await f.manager.setAccount(null);t.mock.timers.tick(2000);await pending;
  assert.equal(f.active.length,0);assert.equal(f.shown.length,1);
+});
+
+
+test('Apple Banana Mango: every individual checkbox update waits for old-card removal and leaves one latest card',async()=>{
+ const f=workerFixture({closeDelayReads:3});await f.manager.setAccount('a');
+ const shopping={...note,body:'Apple\nBanana\nMango',checked:[],updated:1};
+ await f.manager.toggle(shopping);
+ for(let bought=1;bought<=3;bought++){
+  await f.manager.sync([{...shopping,checked:Array.from({length:bought},(_,i)=>i),updated:bought+1}]);
+  assert.equal(f.active.length,1);
+  assert.equal(f.liveAtShow.at(-1),0,'a replacement must never be shown while an old card remains');
+  assert.equal(f.active[0].body.split('\n').filter(line=>line.startsWith('\u2611')).length,bought);
+ }
+ assert.equal(f.shown.length,4);
+});
+
+test('when the browser refuses to remove the previous card, updates fail without creating another card',async()=>{
+ const f=workerFixture({refuseClose:true});await f.manager.setAccount('a');await f.manager.toggle({...note,updated:1});
+ await assert.rejects(f.manager.sync([{...note,body:'Updated',updated:2}]),/No new notification was added/);
+ assert.equal(f.active.length,1);assert.equal(f.shown.length,1);
 });

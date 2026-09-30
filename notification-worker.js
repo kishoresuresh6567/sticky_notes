@@ -5,24 +5,34 @@ const clearedTags=new Map();
 function serialize(operation){const result=operations.catch(()=>{}).then(operation);operations=result;return result;}
 function sameNote(a,b){return a.tag===b.tag||(a.tag?.startsWith('ticky-note:')&&a.data?.accountId&&a.data.accountId===b.data?.accountId&&a.data.noteId===b.data?.noteId);}
 function newer(a,b){return (a.data?.updated||0)-(b.data?.updated||0)||(a.data?.issuedAt||0)-(b.data?.issuedAt||0);}
+async function removeAndConfirm(match){
+  // close() has no completion promise. Re-read the browser's notification list
+  // before allowing another card to be created for this note.
+  for(let attempt=0;attempt<20;attempt++){
+    const remaining=(await self.registration.getNotifications()).filter(match);
+    if(!remaining.length)return;
+    remaining.forEach(notification=>notification.close());
+    await new Promise(resolve=>setTimeout(resolve,50));
+  }
+  if((await self.registration.getNotifications()).some(match))throw new Error('notification-close-pending');
+}
 async function replace(title,options,onlyIfPresent){
   const existing=(await self.registration.getNotifications()).filter(n=>sameNote(n,options));
   if(onlyIfPresent&&!existing.length)return;
   if(onlyIfPresent&&clearedTags.has(options.tag))return;
   if(!onlyIfPresent)clearedTags.delete(options.tag);
   const newest=existing.reduce((best,n)=>newer(n,best)>0?n:best,{title,...options});
+  if(existing.includes(newest)&&existing.length===1)return;
   if(existing.includes(newest)){
-    existing.filter(n=>n!==newest).forEach(n=>n.close());
-    return;
+    title=newest.title;
+    options={...options,body:newest.body,data:newest.data};
   }
   if(existing.length===1&&existing[0].title===title&&existing[0].body===options.body)return;
-  // Do not close the canonical card before updating it: doing so turns every
-  // checkbox save into a fresh system notification instead of a tag replacement.
-  existing.filter(n=>n.tag!==options.tag).forEach(n=>n.close());
+  // Remove every previous version first, including duplicate/legacy tags.
+  // If removal cannot be confirmed, do not add yet another notification.
+  await removeAndConfirm(notification=>sameNote(notification,options));
+  if(clearedTags.has(options.tag))return;
   await self.registration.showNotification(title,{...options,renotify:false});
-  const remaining=(await self.registration.getNotifications()).filter(n=>sameNote(n,options));
-  const keep=remaining.reduce((a,b)=>!a||newer(b,a)>=0?b:a,null);
-  remaining.filter(n=>n!==keep).forEach(n=>n.close());
 }
 self.addEventListener('message',event=>{
   const message=event.data,kind=message?.type;
@@ -33,11 +43,11 @@ self.addEventListener('message',event=>{
   event.waitUntil(serialize(async()=>{
     try{
       if(kind==='clear-note-notification'){
-        for(const notification of await self.registration.getNotifications())if(notification.tag===tag)notification.close();
+        await removeAndConfirm(notification=>notification.tag===tag);
         await changed();
       }else await replace(message.title,message.options,message.onlyIfPresent);
       event.ports[0]?.postMessage({ok:true});
-    }catch{event.ports[0]?.postMessage({ok:false});}
+    }catch(error){event.ports[0]?.postMessage({ok:false,code:error.message==='notification-close-pending'?'notification-close-pending':'notification-update-failed'});}
   }));
 });
 async function changed(){
@@ -49,7 +59,7 @@ self.addEventListener('notificationclick',event=>{
     const notification=event.notification;
     if(event.action==='clear'){
       clearedTags.set(notification.tag,Date.now());notification.close();
-      for(const existing of await self.registration.getNotifications())if(sameNote(existing,notification))existing.close();
+      await removeAndConfirm(existing=>sameNote(existing,notification));
       await changed();return;
     }
     if(clearedTags.has(notification.tag)){

@@ -33,7 +33,7 @@ class NoteNotifications {
       const channel=new MessageChannel();
       const finish=(error,value)=>{clearTimeout(timeout);channel.port1.close();error?reject(error):resolve(value);};
       const timeout=setTimeout(()=>finish(new Error('Could not confirm the notification update. Reload the app and try again.')),8000);
-      channel.port1.onmessage=event=>finish(event.data?.ok?null:new Error('Could not update this notification. Please try again.'),event.data);
+      channel.port1.onmessage=event=>finish(event.data?.ok?null:new Error(event.data?.code==='notification-close-pending'?'The browser has not removed the old notification yet. No new notification was added. Clear it in your notification center, then select the note again.':'Could not update this notification. Please try again.'),event.data);
       try{registration.active.postMessage(message,[channel.port2]);}catch(error){finish(error);}
     });
   }
@@ -42,8 +42,13 @@ class NoteNotifications {
     if(registration.active)return this.workerRequest(registration,{type:'replace-note-notification',title,options,onlyIfPresent});
     const existing=(await registration.getNotifications()).filter(n=>this.ours(n)&&n.data?.accountId===id&&n.data?.noteId===note.id);
     if(onlyIfPresent&&!existing.length)return;
-    // Keep the canonical notification alive so the browser replaces its tag.
-    existing.filter(n=>n.tag!==options.tag).forEach(n=>n.close());
+    existing.forEach(n=>n.close());
+    for(let attempt=0;attempt<20;attempt++){
+      const remaining=(await registration.getNotifications()).filter(n=>this.ours(n)&&n.data?.accountId===id&&n.data?.noteId===note.id);
+      if(!remaining.length)break;
+      if(attempt===19)throw new Error('The old notification could not be removed. No new notification was added.');
+      remaining.forEach(n=>n.close());await new Promise(resolve=>setTimeout(resolve,50));
+    }
     await registration.showNotification(title,options);
   }
   clear(note){
