@@ -20,14 +20,14 @@ test('notification button becomes a status until the system notification is dism
   const makeCard=()=>a.run("card({id:'n1',title:'Shopping',body:'Apple',type:'text',checked:[],color:'yellow',updated:1})");
   let card=makeCard();
   const button=card.children.find(child=>child.className==='notification-toggle');
-  assert.equal(button.textContent,'Show in browser');
+  assert.equal(button.textContent,'Show in Notification');
   await button.onclick();assert.equal(shown,1);
   card=makeCard();
   assert.equal(card.children.some(child=>child.className==='notification-toggle'),false);
   const status=card.children.find(child=>child.className==='notification-status');
   assert.equal(status.textContent,'Displayed in notification');assert.equal(status.onclick,undefined);
   selected.clear();
-  assert.equal(makeCard().children.find(child=>child.className==='notification-toggle').textContent,'Show in browser');
+  assert.equal(makeCard().children.find(child=>child.className==='notification-toggle').textContent,'Show in Notification');
 });
 
 test('default note order stays stable after an older note is edited',()=>{

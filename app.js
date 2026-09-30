@@ -211,7 +211,7 @@ if(!n.trash&&!privateNotes.includes(n)&&notifications){
  if(notifications.selected.has(n.id)){
   article.append(el('span','notification-status','Displayed in notification'));
  }else{
-  const button=el('button','notification-toggle','Show in browser');
+  const button=el('button','notification-toggle','Show in Notification');
   button.type='button';button.title='Send a snapshot of this note. Later edits stay in the app and do not send more notifications.';
   button.onclick=async()=>{button.disabled=true;try{const shown=await notifications.show(n);if(shown)toast('Note shown in notifications on this device');render();}catch(error){toast(error.message);}finally{button.disabled=false;}};
   article.append(button);
