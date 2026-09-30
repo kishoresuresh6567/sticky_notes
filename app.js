@@ -20,24 +20,45 @@ async function syncNotifications(snapshot=notes){
 }
 window.navigator?.serviceWorker?.addEventListener('message',event=>{
  if(event.data?.type==='note-notifications-changed')void syncNotifications();
- if(event.data?.type==='open-note'){pendingNotificationNote=event.data;openNotificationNote();}
+ if(event.data?.type==='open-note'){
+  pendingNotificationNote=event.data;openNotificationNote();
+  event.ports?.[0]?.postMessage({accepted:true});
+ }
 });
 window.addEventListener?.('focus',()=>{if(accountId)void syncNotifications();});
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&accountId)void syncNotifications();});
 let accountId=null,accountEpoch=0,cloudError='';
-let pendingNotificationNote=null,highlightedNoteId=null;
-try{if(window.location?.hash.startsWith('#note='))pendingNotificationNote=JSON.parse(decodeURIComponent(window.location.hash.slice(6)));}catch{}
+let pendingNotificationNote=null,highlightedNoteId=null,notificationScrollScheduled=false;
+function readNotificationLink(){
+ try{if(window.location?.hash.startsWith('#note='))pendingNotificationNote=JSON.parse(decodeURIComponent(window.location.hash.slice(6)));}catch{}
+}
+readNotificationLink();
+window.addEventListener?.('hashchange',()=>{readNotificationLink();openNotificationNote();});
+window.addEventListener?.('pageshow',()=>{readNotificationLink();openNotificationNote();});
+window.addEventListener?.('focus',()=>openNotificationNote());
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')openNotificationNote();});
+function scheduleNotificationScroll(){
+ if(notificationScrollScheduled)return;
+ notificationScrollScheduled=true;
+ const schedule=window.requestAnimationFrame?.bind(window)||((callback)=>setTimeout(callback,16));
+ schedule(()=>{notificationScrollScheduled=false;openNotificationNote();});
+}
 function openNotificationNote(){
  const target=pendingNotificationNote;
  if(!target||!accountId||!cloud.ready||cloud.id!==accountId)return;
- pendingNotificationNote=null;
- if(target.accountId!==accountId){toast('Sign in with the account that owns this notification.');return;}
+ if(document.visibilityState==='hidden')return;
+ if(document.body?.classList.contains('auth-locked')){scheduleNotificationScroll();return;}
+ if(target.accountId!==accountId){pendingNotificationNote=null;toast('Sign in with the account that owns this notification.');return;}
  const note=notes.find(n=>n.id===target.noteId&&!n.trash);
- if(!note){toast('This note is no longer available.');return;}
+ if(!note){pendingNotificationNote=null;toast('This note is no longer available.');return;}
  view='all';activeCategory='';$('#search').value='';highlightedNoteId=note.id;
  render();
  const card=[...document.querySelectorAll('[data-note-id]')].find(node=>node.dataset.noteId===note.id);
- card?.scrollIntoView({block:'center',behavior:'smooth'});card?.focus({preventScroll:true});
+ // Keep the target until it has layout. Login and background restoration can
+ // briefly hide the board even though its data has already loaded.
+ if(!card||card.getClientRects?.().length===0){scheduleNotificationScroll();return;}
+ card.scrollIntoView({block:'center',behavior:'instant'});card.focus({preventScroll:true});
+ pendingNotificationNote=null;
  if(window.location?.hash.startsWith('#note='))window.history?.replaceState(null,'',window.location.pathname+window.location.search);
 }
 let categories=[],activeCategory='';

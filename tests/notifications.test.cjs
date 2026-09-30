@@ -58,8 +58,8 @@ test('clear removes only the selected note and stale notification snapshots cann
  await f.manager.sync([{...note,body:'Updated'}]);
  assert.equal(f.shown.length,2);assert.equal(f.manager.selected.has(note.id),false);
 });
-function workerFixture({closeDelayReads=0,refuseClose=false,noWindow=false}={}){
- const handlers={},active=[],shown=[],liveAtShow=[],messages=[],opened=[];
+function workerFixture({closeDelayReads=0,refuseClose=false,noWindow=false,ignoreMessages=false}={}){
+ const handlers={},active=[],shown=[],liveAtShow=[],messages=[],opened=[],navigated=[];
  const registration={
   async getNotifications(){
    for(const notification of active.slice()){
@@ -74,13 +74,21 @@ function workerFixture({closeDelayReads=0,refuseClose=false,noWindow=false}={}){
    active.push(notification);
   }
  };
- const self={registration,addEventListener(name,fn){handlers[name]=fn;},clients:{async matchAll(){return noWindow?[]:[{async focus(){},postMessage(message){messages.push(message);}}];},async openWindow(url){opened.push(url);}}};
- require('node:vm').runInNewContext(require('node:fs').readFileSync('notification-worker.js','utf8'),{self,setTimeout});
+ const self={registration,addEventListener(name,fn){handlers[name]=fn;},clients:{async matchAll(){return noWindow?[]:[{async focus(){},postMessage(message,ports){messages.push(message);if(!ignoreMessages)ports?.[0]?.postMessage({accepted:true});},async navigate(url){navigated.push(url);return this;}}];},async openWindow(url){opened.push(url);}}};
+ require('node:vm').runInNewContext(require('node:fs').readFileSync('notification-worker.js','utf8'),{self,setTimeout,clearTimeout,MessageChannel});
  registration.active={postMessage(data,ports){handlers.message({data,ports,waitUntil(p){p.catch(()=>{});}});}};
  const manager=new NoteNotifications({notification:{permission:'granted'},workers:{async register(){},ready:Promise.resolve(registration)}});
  async function click(notification,action=''){let promise;handlers.notificationclick({notification,action,waitUntil(p){promise=p;}});await promise;}
- return {manager,registration,active,shown,liveAtShow,click,messages,opened};
+ return {manager,registration,active,shown,liveAtShow,click,messages,opened,navigated};
 }
+
+test('a page that misses the click message receives a persistent note URL instead',async()=>{
+ const f=workerFixture({ignoreMessages:true});await f.manager.setAccount('a');await f.manager.show(note);
+ await f.click(f.active[0]);
+ assert.equal(f.navigated.length,1);assert.equal(f.opened.length,0);
+ const target=JSON.parse(decodeURIComponent(f.navigated[0].split('#note=')[1]));
+ assert.equal(target.noteId,note.id);assert.equal(target.accountId,'a');
+});
 
 test('notification clicks target the correct note in existing and newly opened windows',async()=>{
  for(const noWindow of [false,true]){

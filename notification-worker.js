@@ -56,6 +56,28 @@ async function changed(){
   for(const client of await self.clients.matchAll({type:'window',includeUncontrolled:true}))client.postMessage({type:'note-notifications-changed'});
 }
 self.addEventListener('notificationclose',event=>event.waitUntil(changed()));
+async function navigateToNote(target){
+  const url='/#note='+encodeURIComponent(JSON.stringify(target));
+  const windows=await self.clients.matchAll({type:'window',includeUncontrolled:true});
+  for(const client of windows){
+    try{
+      await client.focus();
+      const accepted=await new Promise(resolve=>{
+        const channel=new MessageChannel();
+        const finish=value=>{clearTimeout(timeout);channel.port1.close();resolve(value);};
+        const timeout=setTimeout(()=>finish(false),1000);
+        channel.port1.onmessage=event=>finish(event.data?.accepted===true);
+        try{client.postMessage({type:'open-note',...target},[channel.port2]);}catch{finish(false);}
+      });
+      if(accepted)return;
+      // A suspended or outdated page may have no message listener. Carry the
+      // target in its URL so it survives loading and authentication.
+      const navigated=await client.navigate(url);
+      if(navigated){await navigated.focus();return;}
+    }catch{}
+  }
+  await self.clients.openWindow(url);
+}
 self.addEventListener('notificationclick',event=>{
   event.waitUntil(serialize(async()=>{
     const notification=event.notification;
@@ -68,12 +90,8 @@ self.addEventListener('notificationclick',event=>{
       if((notification.data?.issuedAt||0)<=clearedTags.get(notification.tag))return;
       clearedTags.delete(notification.tag);
     }
-    const windows=await self.clients.matchAll({type:'window',includeUncontrolled:true});
     const target={accountId:notification.data?.accountId,noteId:notification.data?.noteId};
-    if(windows.length){
-      await windows[0].focus();
-      windows[0].postMessage({type:'open-note',...target});
-    }else await self.clients.openWindow('/#note='+encodeURIComponent(JSON.stringify(target)));
+    await navigateToNote(target);
     const existing=(await self.registration.getNotifications()).filter(n=>sameNote(n,notification));
     const snapshot=existing.reduce((a,b)=>newer(a,b)>=0?a:b,notification);
     // A clicked card can still appear in getNotifications() before the OS

@@ -59,6 +59,20 @@ test('notification navigation waits for loading, clears filters and guards accou
  assert.match(a.elements.get('#toast').textContent,/no longer available/);
 });
 
+test('notification navigation waits for authentication visibility and scrolls the live card',async()=>{
+ const a=app();await a.run("activateNotes({id:'a'})");
+ const frames=[];let locked=true,visible=false,scrolled=0;
+ a.context.window.requestAnimationFrame=callback=>frames.push(callback);
+ a.context.document.body={classList:{contains(){return locked;}}};
+ a.context.document.querySelectorAll=selector=>selector==='[data-note-id]'?[{dataset:{noteId:'n1'},getClientRects(){return visible?[{}]:[];},scrollIntoView(options){assert.equal(options.behavior,'instant');scrolled++;},focus(){}}]:[];
+ a.run("notes=[{id:'n1',title:'Target',body:'',type:'text',created:1,updated:1}];pendingNotificationNote={accountId:'a',noteId:'n1'};openNotificationNote()");
+ assert.equal(scrolled,0);assert.equal(a.run('pendingNotificationNote.noteId'),'n1');
+ locked=false;frames.shift()();
+ assert.equal(scrolled,0);assert.equal(a.run('pendingNotificationNote.noteId'),'n1');
+ visible=true;frames.shift()();
+ assert.equal(scrolled,1);assert.equal(a.run('pendingNotificationNote'),null);
+});
+
 test('account changes clear notes, drafts, categories and decrypted vault state',async()=>{
   const a=app();await a.run("activateNotes({id:'a'})");
   a.run("notes=[{id:'a-secret'}];categories=[{id:'private-category'}];privateNotes=[{body:'vault secret'}];key={};editing={body:'draft'};pendingVaultNote={body:'pending secret'};view='vault';$('#note-body').value='draft';$('#vault-password').value='password';");
