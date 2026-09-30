@@ -24,7 +24,24 @@ class NoteNotifications {
   }
   options(note,id){
     const body=note.type==='text'?note.body:note.body.split('\n').map((line,i)=>`${note.type==='bullets'?'•':note.checked.includes(i)?'☑':'☐'} ${line}`).join('\n');
-    return {body:body.slice(0,1500),tag:`ticky-note:${encodeURIComponent(id)}:${encodeURIComponent(note.id)}`,requireInteraction:true,silent:true,data:{accountId:id,noteId:note.id,issuedAt:Date.now()},actions:[{action:'clear',title:'Clear notification'}]};
+    return {body:body.slice(0,1500),tag:`ticky-note:${encodeURIComponent(id)}:${encodeURIComponent(note.id)}`,requireInteraction:true,silent:true,renotify:false,data:{accountId:id,noteId:note.id,issuedAt:Date.now(),updated:note.updated||0},actions:[{action:'clear',title:'Clear notification'}]};
+  }
+  workerRequest(registration,message){
+    return new Promise((resolve,reject)=>{
+      const channel=new MessageChannel();
+      const finish=(error,value)=>{clearTimeout(timeout);channel.port1.close();error?reject(error):resolve(value);};
+      const timeout=setTimeout(()=>finish(new Error('Could not confirm the notification update. Reload the app and try again.')),8000);
+      channel.port1.onmessage=event=>finish(event.data?.ok?null:new Error('Could not update this notification. Please try again.'),event.data);
+      try{registration.active.postMessage(message,[channel.port2]);}catch(error){finish(error);}
+    });
+  }
+  async replace(registration,note,id,onlyIfPresent=false){
+    const options=this.options(note,id),title=note.title||'Untitled note';
+    if(registration.active)return this.workerRequest(registration,{type:'replace-note-notification',title,options,onlyIfPresent});
+    const existing=(await registration.getNotifications()).filter(n=>this.ours(n)&&n.data?.accountId===id&&n.data?.noteId===note.id);
+    if(onlyIfPresent&&!existing.length)return;
+    existing.forEach(n=>n.close());
+    await registration.showNotification(title,options);
   }
   clear(note){
     const id=this.account,tag=this.options(note,id).tag;
@@ -32,15 +49,7 @@ class NoteNotifications {
     return this.enqueue(async()=>{
       const registration=await this.registration();
       // Also serialize the clear with click restoration inside the worker.
-      if(registration.active){
-        await new Promise((resolve,reject)=>{
-          const channel=new MessageChannel();
-          const finish=error=>{clearTimeout(timeout);channel.port1.close();error?reject(error):resolve();};
-          const timeout=setTimeout(()=>finish(new Error('Could not confirm notification removal. Reload the app and try Clear again.')),8000);
-          channel.port1.onmessage=event=>finish(event.data?.ok?null:new Error('Could not clear this notification. Please try again.'));
-          try{registration.active.postMessage({type:'clear-note-notification',tag},[channel.port2]);}catch(error){finish(error);}
-        });
-      }
+      if(registration.active)await this.workerRequest(registration,{type:'clear-note-notification',tag});
       for(const notification of await registration.getNotifications())if(notification.tag===tag)notification.close();
       this.selected.delete(note.id);return false;
     });
@@ -59,7 +68,7 @@ class NoteNotifications {
       if(epoch!==this.epoch)return;
       if(existing.length){existing.forEach(n=>n.close());this.selected.delete(note.id);return false;}
       this.cleared.delete(this.options(note,id).tag);
-      await registration.showNotification(note.title||'Untitled note',this.options(note,id));
+      await this.replace(registration,note,id);
       if(epoch!==this.epoch){for(const n of await registration.getNotifications())if(this.ours(n)&&n.data?.accountId===id)n.close();return;}
       this.selected.add(note.id);return true;
     });
@@ -69,16 +78,18 @@ class NoteNotifications {
     if(!this.supported()||!id)return Promise.resolve();
     return this.enqueue(async()=>{
       if(epoch!==this.epoch)return;
-      const registration=await this.registration(),active=await registration.getNotifications(),selected=new Set();
+      const registration=await this.registration(),active=await registration.getNotifications(),selected=new Set(),processed=new Set();
       for(const notification of active){
         if(epoch!==this.epoch)return;
         if(!this.ours(notification)||notification.data?.accountId!==id)continue;
         if(this.cleared.has(notification.tag)){notification.close();continue;}
         const note=notes.find(n=>n.id===notification.data.noteId&&!n.trash);
         if(!note){notification.close();continue;}
-        selected.add(note.id);
+        if(processed.has(note.id))continue;
+        processed.add(note.id);selected.add(note.id);
         const options=this.options(note,id),title=note.title||'Untitled note';
-        if(notification.title!==title||notification.body!==options.body)await registration.showNotification(title,options);
+        const duplicates=active.filter(n=>this.ours(n)&&n.data?.accountId===id&&n.data?.noteId===note.id);
+        if(duplicates.length>1||notification.title!==title||notification.body!==options.body)await this.replace(registration,note,id,true);
       }
       if(epoch===this.epoch)this.selected=selected;
     });
