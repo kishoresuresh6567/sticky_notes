@@ -61,7 +61,7 @@ class NoteNotifications {
       this.selected.delete(note.id);return false;
     });
   }
-  async toggle(note){
+  async show(note){
     const id=this.account,epoch=this.epoch;
     if(!id||note.trash)throw new Error('Sign in and select an active note first.');
     if(!this.supported())throw new Error('Notifications are not supported in this browser. Try Edge or Chrome over HTTPS.');
@@ -73,7 +73,7 @@ class NoteNotifications {
       const registration=await this.registration();
       const existing=(await registration.getNotifications()).filter(n=>this.ours(n)&&n.data?.accountId===id&&n.data?.noteId===note.id);
       if(epoch!==this.epoch)return;
-      if(existing.length){existing.forEach(n=>n.close());this.selected.delete(note.id);return false;}
+      if(existing.length){this.selected.add(note.id);return true;}
       this.cleared.delete(this.options(note,id).tag);
       await this.replace(registration,note,id);
       if(epoch!==this.epoch){for(const n of await registration.getNotifications())if(this.ours(n)&&n.data?.accountId===id)n.close();return;}

@@ -118,6 +118,6 @@ body.auth-locked #close-account{display:none}
 .editor-item-remove{padding:8px;font-size:20px;opacity:.65}
 #add-editor-item{margin:10px 0;padding:8px 12px;border:1px solid var(--line);border-radius:6px;color:inherit}
 
-.notification-toggle{margin-top:12px;padding:8px 10px;border:1px solid currentColor;border-radius:6px;align-self:flex-start;font-size:11px;color:inherit}.notification-toggle[aria-pressed="true"]{font-weight:700;background:#ffffff40}.notification-toggle:disabled{opacity:.5;cursor:wait}
+.notification-toggle,.notification-status{margin-top:12px;padding:8px 10px;border:1px solid currentColor;border-radius:6px;align-self:flex-start;font-size:11px;color:inherit}.notification-status{font-weight:700;background:#ffffff40}.notification-toggle:disabled{opacity:.5;cursor:wait}
 
 .notification-hint{display:block;margin-top:6px;font-size:10px;line-height:1.5;opacity:.75}

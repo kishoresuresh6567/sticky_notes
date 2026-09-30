@@ -14,6 +14,22 @@ function app(noteNotifications){
   return {run:s=>vm.runInContext(s,context),context,cloud,saved,elements};
 }
 
+test('notification button becomes a status until the system notification is dismissed',async()=>{
+  const selected=new Set();let shown=0;
+  const a=app({selected,async show(note){shown++;selected.add(note.id);return true;}});
+  const makeCard=()=>a.run("card({id:'n1',title:'Shopping',body:'Apple',type:'text',checked:[],color:'yellow',updated:1})");
+  let card=makeCard();
+  const button=card.children.find(child=>child.className==='notification-toggle');
+  assert.equal(button.textContent,'Show in browser');
+  await button.onclick();assert.equal(shown,1);
+  card=makeCard();
+  assert.equal(card.children.some(child=>child.className==='notification-toggle'),false);
+  const status=card.children.find(child=>child.className==='notification-status');
+  assert.equal(status.textContent,'Displayed in notification');assert.equal(status.onclick,undefined);
+  selected.clear();
+  assert.equal(makeCard().children.find(child=>child.className==='notification-toggle').textContent,'Show in browser');
+});
+
 test('account changes clear notes, drafts, categories and decrypted vault state',async()=>{
   const a=app();await a.run("activateNotes({id:'a'})");
   a.run("notes=[{id:'a-secret'}];categories=[{id:'private-category'}];privateNotes=[{body:'vault secret'}];key={};editing={body:'draft'};pendingVaultNote={body:'pending secret'};view='vault';$('#note-body').value='draft';$('#vault-password').value='password';");

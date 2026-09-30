@@ -12,45 +12,46 @@ function fixture(permission='granted'){
 const note={id:'n1',title:'Shopping',body:'Milk\nBread',type:'checklist',checked:[1],trash:false};
 test('selected notes persist through controller reload, clear individually, and never prompt on load',async()=>{
  const f=fixture('default');await f.manager.setAccount('a');assert.equal(f.requested,0);
- assert.equal(await f.manager.toggle(note),true);assert.equal(f.requested,1);
+ assert.equal(await f.manager.show(note),true);assert.equal(f.requested,1);
  assert.equal(f.shown[0].requireInteraction,true);assert.equal(f.shown[0].body,'\u2610 Milk\n\u2611 Bread');
  assert.equal(f.shown[0].data.accountId,'a');assert.equal(f.shown[0].actions[0].action,'clear');
  f.notification.permission='granted';
- await f.manager.toggle({...note,id:'n2'});assert.equal(f.active.size,2);
+ await f.manager.show({...note,id:'n2'});assert.equal(f.active.size,2);
  await f.manager.setAccount('a');assert.equal(f.manager.selected.size,2);
- assert.equal(await f.manager.toggle(note),false);assert.equal(f.active.size,1);
+ assert.equal(await f.manager.show(note),true);assert.equal(f.active.size,2);assert.equal(f.shown.length,2);
+ [...f.active.values()][0].close();await f.manager.sync([note,{...note,id:'n2'}]);
  assert.equal(f.manager.selected.has('n1'),false);
 });
 test('sync preserves snapshots without re-creating dismissed ones and clears missing or trashed notes',async()=>{
- const f=fixture();await f.manager.setAccount('a');await f.manager.toggle(note);
+ const f=fixture();await f.manager.setAccount('a');await f.manager.show(note);
  await f.manager.sync([{...note,body:'New text',type:'text'}]);assert.equal(f.shown.length,1);assert.equal(f.shown.at(-1).body,'\u2610 Milk\n\u2611 Bread');
  [...f.active.values()][0].close();await f.manager.sync([note]);assert.equal(f.active.size,0);assert.equal(f.manager.selected.size,0);
- await f.manager.toggle(note);await f.manager.sync([{...note,trash:true}]);assert.equal(f.active.size,0);
- await f.manager.toggle(note);await f.manager.sync([]);assert.equal(f.active.size,0);
+ await f.manager.show(note);await f.manager.sync([{...note,trash:true}]);assert.equal(f.active.size,0);
+ await f.manager.show(note);await f.manager.sync([]);assert.equal(f.active.size,0);
 });
 test('logout and account switching clear notifications, including pending permission requests',async()=>{
- const f=fixture();await f.manager.setAccount('a');await f.manager.toggle(note);
+ const f=fixture();await f.manager.setAccount('a');await f.manager.show(note);
  await f.manager.setAccount('b');assert.equal(f.active.size,0);
- await f.manager.toggle(note);await f.manager.setAccount(null);assert.equal(f.active.size,0);
+ await f.manager.show(note);await f.manager.setAccount(null);assert.equal(f.active.size,0);
  await f.manager.setAccount('a');f.notification.permission='default';let finish;
  f.notification.requestPermission=()=>new Promise(resolve=>{finish=resolve;});
- const pending=f.manager.toggle(note);await f.manager.setAccount(null);finish('granted');await pending;
+ const pending=f.manager.show(note);await f.manager.setAccount(null);finish('granted');await pending;
  assert.equal(f.active.size,0);
 });
 test('denied permission and unsupported browsers give actionable errors',async()=>{
  const f=fixture('denied');await f.manager.setAccount('a');
- await assert.rejects(f.manager.toggle(note),/Allow notifications/);assert.equal(f.active.size,0);
+ await assert.rejects(f.manager.show(note),/Allow notifications/);assert.equal(f.active.size,0);
  const unsupported=new NoteNotifications({notification:null,workers:null});await unsupported.setAccount('a');
- await assert.rejects(unsupported.toggle(note),/not supported/);
+ await assert.rejects(unsupported.show(note),/not supported/);
 });
 test('explicit clear never shows a missing notification and does not ask for permission',async()=>{
- const f=fixture();await f.manager.setAccount('a');await f.manager.toggle(note);
+ const f=fixture();await f.manager.setAccount('a');await f.manager.show(note);
  f.active.clear();f.notification.permission='denied';
  await f.manager.clear(note);
  assert.equal(f.shown.length,1);assert.equal(f.requested,0);assert.equal(f.manager.selected.has(note.id),false);
 });
 test('clear removes only the selected note and stale notification snapshots cannot restore it',async()=>{
- const f=fixture();await f.manager.setAccount('a');await f.manager.toggle(note);await f.manager.toggle({...note,id:'n2'});
+ const f=fixture();await f.manager.setAccount('a');await f.manager.show(note);await f.manager.show({...note,id:'n2'});
  const stale=[...f.active.values()][0];await f.manager.clear(note);
  assert.equal(f.active.size,1);assert.equal(f.manager.selected.has('n2'),true);
  f.registration.getNotifications=async()=>[stale];
@@ -84,7 +85,7 @@ function workerFixture({closeDelayReads=0,refuseClose=false}={}){
 test('every checkbox edit leaves the original snapshot unchanged without publishing another notification',async()=>{
  const f=workerFixture();await f.manager.setAccount('a');
  const shopping={...note,body:'Apple\nBanana\nMango',checked:[],updated:1};
- await f.manager.toggle(shopping);const original=f.active[0].body;
+ await f.manager.show(shopping);const original=f.active[0].body;
  for(let bought=1;bought<=3;bought++){
   await f.manager.sync([{...shopping,checked:Array.from({length:bought},(_,i)=>i),updated:bought+1}]);
   assert.equal(f.shown.length,1);assert.equal(f.active.length,1);assert.equal(f.active[0].body,original);
@@ -92,13 +93,13 @@ test('every checkbox edit leaves the original snapshot unchanged without publish
  await f.manager.setAccount('a');await f.manager.sync([{...shopping,title:'Edited title',body:'Edited body',updated:5}]);
  assert.equal(f.shown.length,1);assert.equal(f.active[0].title,'Shopping');
  await f.manager.clear(shopping);assert.equal(f.active.length,0);
- await f.manager.toggle({...shopping,checked:[0,1,2],updated:6});
+ await f.manager.show({...shopping,checked:[0,1,2],updated:6});
  assert.equal(f.shown.length,2);assert.equal(f.active.length,1);
  assert.equal(f.active[0].body.split('\n').every(line=>line.startsWith('\u2611')),true);
 });
 
 test('ten concurrent saves do not publish notifications, even when the browser reports no active cards',async()=>{
- const f=workerFixture();await f.manager.setAccount('a');await f.manager.toggle(note);
+ const f=workerFixture();await f.manager.setAccount('a');await f.manager.show(note);
  f.registration.getNotifications=async()=>[];
  await Promise.all(Array.from({length:10},(_,i)=>f.manager.sync([{...note,body:`Edit ${i}`,updated:i+2}])));
  assert.equal(f.shown.length,1);
@@ -106,7 +107,7 @@ test('ten concurrent saves do not publish notifications, even when the browser r
 
 test('opening a notification restores one original snapshot whether dismissal is immediate or delayed',async()=>{
  for(const consumed of [true,false]){
-  const f=workerFixture({closeDelayReads:3});await f.manager.setAccount('a');await f.manager.toggle(note);
+  const f=workerFixture({closeDelayReads:3});await f.manager.setAccount('a');await f.manager.show(note);
   const original=f.active[0];
   await f.manager.sync([{...note,body:'Edited text',checked:[0,1]}]);
   if(consumed)f.active.splice(0);
@@ -120,7 +121,7 @@ test('opening a notification restores one original snapshot whether dismissal is
 
 test('explicit clear from the app or notification prevents restoration on a late click',async()=>{
  for(const source of ['app','notification']){
-  const f=workerFixture();await f.manager.setAccount('a');await f.manager.toggle(note);
+  const f=workerFixture();await f.manager.setAccount('a');await f.manager.show(note);
   const original=f.active[0];
   if(source==='app')await f.manager.clear(note);else await f.click(original,'clear');
   await f.click(original);assert.equal(f.active.length,0);assert.equal(f.shown.length,1);
@@ -128,7 +129,7 @@ test('explicit clear from the app or notification prevents restoration on a late
 });
 
 test('clear requested during delayed click removal prevents its replacement',async()=>{
- const f=workerFixture({closeDelayReads:3});await f.manager.setAccount('a');await f.manager.toggle(note);
+ const f=workerFixture({closeDelayReads:3});await f.manager.setAccount('a');await f.manager.show(note);
  const opened=f.click(f.active[0]);
  await new Promise(resolve=>setImmediate(resolve));
  const cleared=f.manager.clear(note);
@@ -136,14 +137,14 @@ test('clear requested during delayed click removal prevents its replacement',asy
 });
 
 test('old client automatic update messages are ignored by the worker',async()=>{
- const f=workerFixture();await f.manager.setAccount('a');await f.manager.toggle(note);
+ const f=workerFixture();await f.manager.setAccount('a');await f.manager.show(note);
  const result=await f.manager.workerRequest(f.registration,{type:'replace-note-notification',title:'Changed',options:f.manager.options({...note,body:'Changed'},'a'),onlyIfPresent:true});
  assert.equal(result.ok,true);assert.equal(f.shown.length,1);assert.equal(f.active[0].title,note.title);
  await f.manager.replace(f.registration,{...note,body:'Changed'},'a',true);assert.equal(f.shown.length,1);
 });
 
 test('existing duplicates are cleaned up without publishing a replacement',async()=>{
- const f=workerFixture();await f.manager.setAccount('a');await f.manager.toggle(note);
+ const f=workerFixture();await f.manager.setAccount('a');await f.manager.show(note);
  await f.registration.showNotification(note.title,f.manager.options(note,'a'));
  await f.registration.showNotification(note.title,f.manager.options(note,'a'));
  const count=f.shown.length;await f.manager.sync([note]);
@@ -151,7 +152,7 @@ test('existing duplicates are cleaned up without publishing a replacement',async
 });
 
 test('clear still reports a failure if the browser refuses to remove its notification',async()=>{
- const f=workerFixture({refuseClose:true});await f.manager.setAccount('a');await f.manager.toggle(note);
+ const f=workerFixture({refuseClose:true});await f.manager.setAccount('a');await f.manager.show(note);
  await assert.rejects(f.manager.clear(note),/No new notification was added/);
  assert.equal(f.active.length,1);assert.equal(f.shown.length,1);
 });
