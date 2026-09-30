@@ -11,6 +11,9 @@ test('local server serves sign-in assets without exposing server files; vault ch
   const base=`http://127.0.0.1:${server.address().port}`;
   const page=await (await fetch(base)).text();assert.ok(page.includes('id="account-dialog"'));
   const script=await fetch(`${base}/auth.js`);assert.equal(script.status,200);assert.match(script.headers.get('content-type'),/javascript/);
+  for(const file of ['notifications.js','notification-worker.js']){
+    const asset=await fetch(`${base}/${file}`);assert.equal(asset.status,200);assert.match(asset.headers.get('content-type'),/javascript/);
+  }
   for(const route of ['/.env.local','/lib/auth.js','/node_modules/google-auth-library/package.json','/package.json','/toString'])assert.equal((await fetch(base+route)).status,404);
   assert.equal((await fetch(`${base}/api/auth`)).status,200);
   const {stdout}=await promisify(execFile)(process.execPath,['verify.cjs'],{cwd:path.resolve(__dirname,'..'),env:{...process.env,TEST_BASE_URL:base}});

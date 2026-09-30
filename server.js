@@ -7,7 +7,7 @@ const envFile=path.join(__dirname,'.env.local');
 if(fs.existsSync(envFile))process.loadEnvFile(envFile);
 const auth=require('./api/auth');
 const notes=require('./api/notes');
-const files=new Map([['/','index.html'],['/index.html','index.html'],['/app.js','app.js'],['/auth.js','auth.js'],['/cloud.js','cloud.js'],['/style.css','style.css']]);
+const files=new Map([['/','index.html'],['/index.html','index.html'],['/app.js','app.js'],['/auth.js','auth.js'],['/cloud.js','cloud.js'],['/notifications.js','notifications.js'],['/notification-worker.js','notification-worker.js'],['/style.css','style.css']]);
 
 const server=http.createServer(async(req,res)=>{
   for(const [name,value] of Object.entries(securityHeaders))res.setHeader(name,value);

@@ -4,12 +4,12 @@ const vm=require('node:vm');
 const fs=require('node:fs');
 const {webcrypto}=require('node:crypto');
 
-function app(){
+function app(noteNotifications){
   const elements=new Map(),saved=[];
   function element(){return {value:'',textContent:'',children:[],dataset:{},open:false,classList:{add(){},remove(){},toggle(){}},setAttribute(){},append(...items){this.children.push(...items);},replaceChildren(...items){this.children=items;},addEventListener(){},close(){this.open=false;},showModal(){this.open=true;},reset(){},focus(){},setSelectionRange(start,end){this.selectionStart=start;this.selectionEnd=end;}};}
   const document={documentElement:element(),querySelector(s){if(!elements.has(s))elements.set(s,element());return elements.get(s);},querySelectorAll(){return [];},createElement:element,createElementNS:element,addEventListener(){}};
   const cloud={id:null,ready:false,async open(id){this.id=id;this.ready=!!id;return id?{notes:[],categories:[],vault:null}:null;},async save(data){saved.push({id:this.id,data:structuredClone(data)});}};
-  const context=vm.createContext({document,window:{accountCloud:cloud},localStorage:{getItem(k){assert.equal(k,'little-notes-theme');return null;},setItem(){throw Error('Notes must not be stored locally');}},crypto:webcrypto,TextEncoder,TextDecoder,Uint8Array,structuredClone,btoa,atob,setTimeout(){return 1;},clearTimeout(){}});
+  const context=vm.createContext({document,window:{accountCloud:cloud,noteNotifications},localStorage:{getItem(k){assert.equal(k,'little-notes-theme');return null;},setItem(){throw Error('Notes must not be stored locally');}},crypto:webcrypto,TextEncoder,TextDecoder,Uint8Array,structuredClone,btoa,atob,setTimeout(){return 1;},clearTimeout(){}});
   vm.runInContext(fs.readFileSync('app.js','utf8'),context);
   return {run:s=>vm.runInContext(s,context),context,cloud,saved,elements};
 }
@@ -97,4 +97,15 @@ test('list editor splits, merges, pastes and removes items and clears drafts on 
  a.elements.get('#add-editor-item').onclick();assert.equal(a.elements.get('#editor-items').children.length,3);
  await a.run('activateNotes(null)');assert.equal(a.elements.get('#editor-items').children.length,0);
  assert.equal(a.run('editorItems.length'),0);
+});
+
+
+test('moving a note into the vault removes it from notification synchronization',async()=>{
+ const synced=[];
+ const notifications={selected:new Set(),async setAccount(){},async sync(notes){synced.push(structuredClone(notes));}};
+ const a=app(notifications);await a.run("activateNotes({id:'a'})");
+ a.run("notes=[{id:'public',title:'Secret',body:'text',type:'text',checked:[],color:'yellow',created:1,updated:1}];key={};persist=async()=>{};");
+ await a.run('moveVaultNote(notes[0])');
+ assert.deepEqual(synced.at(-1),[]);
+ assert.equal(a.run('privateNotes.length'),1);
 });

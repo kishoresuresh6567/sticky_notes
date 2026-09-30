@@ -78,3 +78,9 @@ The API uses Firebase's REST API with OAuth access tokens and ETag conditional w
 Using the same Firebase database locally and in production shares notes between environments. Use separate projects for isolation. Existing records in the previous database are not automatically transferred; retain a backup and import them using the same verified Google subject IDs before switching a live deployment.
 
 References: [Firebase REST authentication](https://firebase.google.com/docs/database/rest/auth), [conditional writes](https://firebase.google.com/docs/database/rest/save-data), [database rules](https://firebase.google.com/docs/database/security).
+
+## Selected note notifications
+
+Use **Show in notifications** on a regular note and allow the browser notification prompt. Select as many notes as needed. Use **Clear notification**, the system dismiss control, or the notification's **Clear notification** action to remove one. This is per device; it does not enable notifications on other devices. Private vault notes cannot be selected.
+
+Notifications request `requireInteraction` and use a service worker so they can remain after the tab closes. Browser/OS policy controls their lifetime and may truncate long notes; permanent visibility cannot be guaranteed. No push server, timed reminders, or background cloud synchronization is included. While the app is open, saved edits update selected notifications; deleted, trashed, or moved-to-vault notes are cleared. Signing out or changing accounts clears the previous account's notifications on this browser. The notification contains the selected note's text and may appear on the device lock screen.
